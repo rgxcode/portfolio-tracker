@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-gray-900 text-gray-100;
+  }
+}
+
+@layer utilities {
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+}
