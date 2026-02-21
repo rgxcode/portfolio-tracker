@@ -1,0 +1,21 @@
+# Environment Variables (local — never commit)
+.env
+
+# Nuxt build output
+.nuxt/
+.output/
+dist/
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
