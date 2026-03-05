@@ -2,6 +2,8 @@
 
 A **Nuxt 3** portfolio tracking web application that lets you manage and visualise your investment holdings across **crypto** and **stocks** in real-time.
 
+> **⚠️ Disclaimer:** This application is for **informational and educational purposes only**. It is **not intended to provide investment advice**. Always do your own research and consult a qualified financial advisor before making any investment decisions.
+
 ---
 
 ## Features
