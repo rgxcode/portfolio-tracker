@@ -25,3 +25,6 @@ jobs:
           api_location: "" # Api source code path - optional
           app_build_command: "npm run generate"
           output_location: ".output/public" # Built app content directory - optional
+        env:
+          NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY: ${{ secrets.NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY }}
+          NUXT_PUBLIC_COINGECKO_API_KEY: ${{ secrets.NUXT_PUBLIC_COINGECKO_API_KEY }}

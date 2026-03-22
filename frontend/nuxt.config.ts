@@ -22,7 +22,7 @@ export default defineNuxtConfig({
       // CoinGecko API key (optional for free tier - add your key here or in .env)
       coinGeckoApiKey: process.env.NUXT_PUBLIC_COINGECKO_API_KEY || '',
       // Alpha Vantage API key for stock data
-      alphaVantageApiKey: process.env.NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY || 'YOUR_ALPHA_VANTAGE_API_KEY',
+      alphaVantageApiKey: process.env.NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY || '',
     },
   },
 

@@ -78,7 +78,7 @@ export function useMarketData() {
    */
   async function fetchStockPrice(symbol: string): Promise<void> {
     const apiKey = config.public.alphaVantageApiKey
-    if (!apiKey || apiKey === 'YOUR_ALPHA_VANTAGE_API_KEY') {
+    if (!apiKey) {
       console.warn(`[Portfolio Tracker] Alpha Vantage API key not set. Stock prices for ${symbol} will not be updated. Add NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY to your .env file.`)
       return
     }
