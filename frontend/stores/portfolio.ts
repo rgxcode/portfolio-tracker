@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia'
+import { useApi } from '~/composables/useApi'
 
 export interface Asset {
   id: string
+  _id?: string
   symbol: string
   name: string
   type: 'crypto' | 'stock'
@@ -17,6 +19,13 @@ export interface PortfolioState {
   isLoading: boolean
   lastRefreshed: string | null
   error: string | null
+}
+
+function normalizeAsset(raw: any): Asset {
+  return {
+    ...raw,
+    id: raw._id || raw.id,
+  }
 }
 
 export const usePortfolioStore = defineStore('portfolio', {
@@ -82,31 +91,58 @@ export const usePortfolioStore = defineStore('portfolio', {
   },
 
   actions: {
-    addAsset(asset: Omit<Asset, 'id' | 'currentPrice' | 'change24h' | 'lastUpdated'>) {
-      const newAsset: Asset = {
-        ...asset,
-        id: `${asset.symbol}-${Date.now()}`,
-        currentPrice: asset.purchasePrice,
-        change24h: 0,
-        lastUpdated: null,
+    async fetchAssets() {
+      const { apiFetch } = useApi()
+      this.isLoading = true
+      this.error = null
+      try {
+        const data = await apiFetch<any[]>('/api/assets')
+        this.assets = data.map(normalizeAsset)
+      } catch (err: any) {
+        this.error = err?.data?.error || err?.message || 'Failed to load assets'
+      } finally {
+        this.isLoading = false
       }
-      this.assets.push(newAsset)
-      this.persist()
     },
 
-    removeAsset(id: string) {
-      this.assets = this.assets.filter(a => a.id !== id)
-      this.persist()
+    async addAsset(asset: Omit<Asset, 'id' | '_id' | 'currentPrice' | 'change24h' | 'lastUpdated'>) {
+      const { apiFetch } = useApi()
+      try {
+        const created = await apiFetch<any>('/api/assets', {
+          method: 'POST',
+          body: asset,
+        })
+        this.assets.unshift(normalizeAsset(created))
+      } catch (err: any) {
+        this.error = err?.data?.error || err?.message || 'Failed to add asset'
+        throw err
+      }
     },
 
-    updateAssetPrice(symbol: string, price: number, change24h: number) {
-      const asset = this.assets.find(
-        a => a.symbol.toLowerCase() === symbol.toLowerCase(),
-      )
-      if (asset) {
-        asset.currentPrice = price
-        asset.change24h = change24h
-        asset.lastUpdated = new Date().toISOString()
+    async removeAsset(id: string) {
+      const { apiFetch } = useApi()
+      try {
+        await apiFetch(`/api/assets/${id}`, { method: 'DELETE' })
+        this.assets = this.assets.filter(a => a.id !== id)
+      } catch (err: any) {
+        this.error = err?.data?.error || err?.message || 'Failed to remove asset'
+        throw err
+      }
+    },
+
+    async updateAssetPrice(id: string, currentPrice: number, change24h: number) {
+      const { apiFetch } = useApi()
+      try {
+        const updated = await apiFetch<any>(`/api/assets/${id}/price`, {
+          method: 'PATCH',
+          body: { currentPrice, change24h },
+        })
+        const idx = this.assets.findIndex(a => a.id === id)
+        if (idx !== -1) {
+          this.assets[idx] = normalizeAsset(updated)
+        }
+      } catch {
+        // Silently fail price updates — they'll retry on next refresh
       }
     },
 
@@ -120,26 +156,6 @@ export const usePortfolioStore = defineStore('portfolio', {
 
     setLastRefreshed(date: string) {
       this.lastRefreshed = date
-    },
-
-    persist() {
-      if (import.meta.client) {
-        localStorage.setItem('portfolio-assets', JSON.stringify(this.assets))
-      }
-    },
-
-    loadFromStorage() {
-      if (import.meta.client) {
-        const stored = localStorage.getItem('portfolio-assets')
-        if (stored) {
-          try {
-            this.assets = JSON.parse(stored)
-          }
-          catch {
-            this.assets = []
-          }
-        }
-      }
     },
   },
 })

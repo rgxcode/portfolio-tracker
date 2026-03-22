@@ -78,19 +78,18 @@
         </div>
       </div>
     </div>
-
-    <!-- Storage Info -->
-    <StorageInfo class="mt-6" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { usePortfolioStore } from '~/stores/portfolio'
 
+definePageMeta({ middleware: 'auth' })
+
 const store = usePortfolioStore()
 
 onMounted(() => {
-  store.loadFromStorage()
+  store.fetchAssets()
 })
 
 function onAssetAdded() {

@@ -19,6 +19,8 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
+      // Backend API base URL
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:4000',
       // CoinGecko API key (optional for free tier - add your key here or in .env)
       coinGeckoApiKey: process.env.NUXT_PUBLIC_COINGECKO_API_KEY || '',
       // Alpha Vantage API key for stock data

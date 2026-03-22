@@ -63,11 +63,14 @@ export function useMarketData() {
 
     const data = await $fetch<Record<string, { usd: number, usd_24h_change: number }>>(url, { headers })
 
-    // Map results back to symbols
+    // Map results back to assets by symbol
     symbols.forEach((symbol) => {
-      const id = COINGECKO_ID_MAP[symbol.toLowerCase()]
-      if (id && data[id]) {
-        store.updateAssetPrice(symbol, data[id].usd, data[id].usd_24h_change ?? 0)
+      const cgId = COINGECKO_ID_MAP[symbol.toLowerCase()]
+      if (cgId && data[cgId]) {
+        const asset = store.assets.find(a => a.symbol.toLowerCase() === symbol.toLowerCase())
+        if (asset) {
+          store.updateAssetPrice(asset.id, data[cgId].usd, data[cgId].usd_24h_change ?? 0)
+        }
       }
     })
   }
@@ -92,7 +95,10 @@ export function useMarketData() {
       const changePercent = parseFloat(
         (quote['10. change percent'] ?? '0%').replace('%', ''),
       )
-      store.updateAssetPrice(symbol, price, changePercent)
+      const asset = store.assets.find(a => a.symbol.toLowerCase() === symbol.toLowerCase())
+      if (asset) {
+        store.updateAssetPrice(asset.id, price, changePercent)
+      }
     }
   }
 
@@ -124,7 +130,6 @@ export function useMarketData() {
 
       await Promise.allSettled(tasks)
       store.setLastRefreshed(new Date().toISOString())
-      store.persist()
     }
     catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to fetch prices'

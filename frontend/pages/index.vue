@@ -160,9 +160,6 @@
           />
         </div>
       </div>
-
-      <!-- Storage Info -->
-      <StorageInfo class="mt-6" />
     </template>
   </div>
 </template>
@@ -171,12 +168,14 @@
 import { usePortfolioStore } from '~/stores/portfolio'
 import { useMarketData } from '~/composables/useMarketData'
 
+definePageMeta({ middleware: 'auth' })
+
 const store = usePortfolioStore()
 const { refreshAllPrices } = useMarketData()
 
-// Load assets from localStorage on mount
-onMounted(() => {
-  store.loadFromStorage()
+// Load assets from API on mount
+onMounted(async () => {
+  await store.fetchAssets()
   if (store.assets.length > 0) {
     refreshAllPrices()
   }

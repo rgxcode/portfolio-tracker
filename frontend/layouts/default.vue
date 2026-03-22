@@ -13,20 +13,37 @@
           </NuxtLink>
 
           <div class="flex items-center gap-1">
-            <NuxtLink
-              to="/"
-              class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-              :class="$route.path === '/' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'"
-            >
-              Dashboard
-            </NuxtLink>
-            <NuxtLink
-              to="/assets"
-              class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-              :class="$route.path === '/assets' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'"
-            >
-              Assets
-            </NuxtLink>
+            <template v-if="authStore.isAuthenticated">
+              <NuxtLink
+                to="/"
+                class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                :class="$route.path === '/' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'"
+              >
+                Dashboard
+              </NuxtLink>
+              <NuxtLink
+                to="/assets"
+                class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                :class="$route.path === '/assets' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'"
+              >
+                Assets
+              </NuxtLink>
+              <span class="text-gray-400 text-sm ml-3 hidden sm:inline">{{ authStore.user?.email }}</span>
+              <button
+                @click="authStore.logout()"
+                class="ml-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                Logout
+              </button>
+            </template>
+            <template v-else>
+              <NuxtLink
+                to="/auth"
+                class="px-3 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                Sign In
+              </NuxtLink>
+            </template>
           </div>
         </div>
       </div>
@@ -41,3 +58,9 @@
     </footer>
   </div>
 </template>
+
+<script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
+
+const authStore = useAuthStore()
+</script>

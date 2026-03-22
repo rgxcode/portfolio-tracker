@@ -4,6 +4,7 @@ import { dirname, resolve } from 'path'
 import express from 'express'
 import cors from 'cors'
 import mongoose from 'mongoose'
+import authRouter from './routes/auth.js'
 import assetsRouter from './routes/assets.js'
 
 // Load .env manually (avoid dotenv dependency)
@@ -34,6 +35,7 @@ app.use(cors())
 app.use(express.json())
 
 // Routes
+app.use('/api/auth', authRouter)
 app.use('/api/assets', assetsRouter)
 
 // Health check
@@ -50,7 +52,9 @@ app.use((err, _req, res, _next) => {
 // Connect to database and start server
 async function start() {
   try {
-    await mongoose.connect(COSMOS_DB_CONNECTION_STRING)
+    await mongoose.connect(COSMOS_DB_CONNECTION_STRING, {
+      serverSelectionTimeoutMS: 10000,
+    })
     console.log('Connected to database')
   } catch (err) {
     console.error('Database connection failed:', err.message)

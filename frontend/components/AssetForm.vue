@@ -138,7 +138,7 @@ const isSupportedCrypto = computed(() => {
 async function handleSubmit() {
   if (!isValid.value) return
 
-  store.addAsset({
+  await store.addAsset({
     symbol: form.symbol.trim(),
     name: form.name.trim(),
     type: form.type,
