@@ -4,6 +4,7 @@
 # Nuxt build output
 .nuxt/
 .output/
+dist
 dist/
 
 # Node modules
