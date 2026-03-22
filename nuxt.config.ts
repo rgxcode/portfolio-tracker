@@ -9,6 +9,14 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
+  // Force static preset so all pages are pre-rendered as HTML.
+  // Without this, Azure's Oryx build system causes Nitro to auto-detect
+  // the "azure-swa" preset, which skips page pre-rendering and expects
+  // server-side rendering via Azure Functions.
+  nitro: {
+    preset: 'static',
+  },
+
   runtimeConfig: {
     public: {
       // CoinGecko API key (optional for free tier - add your key here or in .env)
