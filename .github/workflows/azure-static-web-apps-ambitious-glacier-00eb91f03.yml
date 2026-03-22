@@ -28,3 +28,4 @@ jobs:
         env:
           NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY: ${{ secrets.NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY }}
           NUXT_PUBLIC_COINGECKO_API_KEY: ${{ secrets.NUXT_PUBLIC_COINGECKO_API_KEY }}
+          NUXT_PUBLIC_API_BASE_URL: https://portfolio-tracker-api.azurewebsites.net

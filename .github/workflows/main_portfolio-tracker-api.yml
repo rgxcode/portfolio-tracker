@@ -63,4 +63,14 @@ jobs:
           app-name: 'portfolio-tracker-api'
           slot-name: 'Production'
           package: .
+
+      - name: Set App Service environment variables
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: 'portfolio-tracker-api'
+          app-settings-json: |
+            [
+              { "name": "JWT_SECRET", "value": "${{ secrets.JWT_SECRET }}", "slotSetting": false },
+              { "name": "COSMOS_DB_CONNECTION_STRING", "value": "${{ secrets.COSMOS_DB_CONNECTION_STRING }}", "slotSetting": false }
+            ]
           
