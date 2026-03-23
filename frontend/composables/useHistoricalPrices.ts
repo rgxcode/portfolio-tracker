@@ -31,7 +31,10 @@ function cutoffTimestamp(period: TimePeriod): number {
   }
 }
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 // ── Caches: fetch once per stock, derive all periods client-side ───
+// Only populated on successful responses — empty/error results are NOT cached
 const stockDailyCache = new Map<string, PricePoint[]>()
 const stockIntradayCache = new Map<string, PricePoint[]>()
 
@@ -64,7 +67,7 @@ export function useHistoricalPrices() {
 
   /**
    * Fetch and cache Alpha Vantage daily data for a stock symbol.
-   * All longer periods (1W, 1M, YTD, 1Y, ALL) are derived from this one request.
+   * Uses compact output (~100 trading days). Only caches successful results.
    */
   async function ensureStockDailyCache(symbol: string): Promise<PricePoint[]> {
     const key = symbol.toUpperCase()
@@ -74,14 +77,10 @@ export function useHistoricalPrices() {
     if (!apiKey) return []
 
     try {
-      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${key}&apikey=${apiKey}&outputsize=full`
+      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(key)}&apikey=${apiKey}&outputsize=compact`
       const data = await $fetch<Record<string, any>>(url)
       const seriesKey = Object.keys(data).find(k => k.startsWith('Time Series'))
-      if (!seriesKey) {
-        // Rate limited or error — cache empty to avoid retrying immediately
-        stockDailyCache.set(key, [])
-        return []
-      }
+      if (!seriesKey) return [] // rate limited or error — do NOT cache so we can retry
 
       const series = data[seriesKey] as Record<string, Record<string, string>>
       const points: PricePoint[] = []
@@ -92,14 +91,13 @@ export function useHistoricalPrices() {
       stockDailyCache.set(key, points)
       return points
     } catch {
-      stockDailyCache.set(key, [])
-      return []
+      return [] // don't cache — allow retry
     }
   }
 
   /**
    * Fetch and cache Alpha Vantage intraday (5min) data for a stock symbol.
-   * Used for 1H and 1D periods.
+   * Only caches successful results.
    */
   async function ensureStockIntradayCache(symbol: string): Promise<PricePoint[]> {
     const key = symbol.toUpperCase()
@@ -109,13 +107,10 @@ export function useHistoricalPrices() {
     if (!apiKey) return []
 
     try {
-      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${key}&interval=5min&apikey=${apiKey}&outputsize=full`
+      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${encodeURIComponent(key)}&interval=5min&apikey=${apiKey}&outputsize=compact`
       const data = await $fetch<Record<string, any>>(url)
       const seriesKey = Object.keys(data).find(k => k.startsWith('Time Series'))
-      if (!seriesKey) {
-        stockIntradayCache.set(key, [])
-        return []
-      }
+      if (!seriesKey) return []
 
       const series = data[seriesKey] as Record<string, Record<string, string>>
       const points: PricePoint[] = []
@@ -126,7 +121,6 @@ export function useHistoricalPrices() {
       stockIntradayCache.set(key, points)
       return points
     } catch {
-      stockIntradayCache.set(key, [])
       return []
     }
   }
@@ -136,7 +130,6 @@ export function useHistoricalPrices() {
     let allPoints: PricePoint[]
 
     if (period === '1H' || period === '1D') {
-      // Use intraday cache, fall back to daily if empty
       allPoints = await ensureStockIntradayCache(symbol)
       if (allPoints.length === 0) {
         allPoints = await ensureStockDailyCache(symbol)
@@ -146,6 +139,23 @@ export function useHistoricalPrices() {
     }
 
     return allPoints.filter(p => p.timestamp >= cutoff)
+  }
+
+  /**
+   * Fetch history for multiple stock symbols sequentially with a delay
+   * to respect Alpha Vantage rate limits (5 requests/minute).
+   */
+  async function fetchAllStockHistories(
+    stocks: { symbol: string; type: 'stock' }[],
+    period: TimePeriod,
+  ): Promise<Map<string, PricePoint[]>> {
+    const result = new Map<string, PricePoint[]>()
+    for (let i = 0; i < stocks.length; i++) {
+      if (i > 0) await delay(1500) // stagger requests to avoid rate limit
+      const points = await fetchStockHistory(stocks[i].symbol, period)
+      result.set(stocks[i].symbol, points)
+    }
+    return result
   }
 
   async function fetchAssetHistory(
@@ -164,5 +174,5 @@ export function useHistoricalPrices() {
     stockIntradayCache.clear()
   }
 
-  return { fetchAssetHistory, clearCache }
+  return { fetchAssetHistory, fetchAllStockHistories, clearCache }
 }

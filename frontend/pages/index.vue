@@ -187,6 +187,79 @@
         <span>{{ filteredAssets.length }} asset{{ filteredAssets.length === 1 ? '' : 's' }}</span>
         <span v-if="store.lastRefreshed">Updated {{ timeAgo(store.lastRefreshed) }}</span>
       </div>
+
+      <!-- ── Allocation & Metrics Section ─────────────────────────── -->
+      <div class="mt-8 pt-6 border-t border-gray-800">
+        <h3 class="text-white font-bold text-lg mb-5">Allocation</h3>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+          <!-- By Type -->
+          <div class="bg-gray-800/50 rounded-2xl border border-gray-700 p-5">
+            <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase mb-3">By Type</p>
+            <div class="h-56">
+              <AllocationPieChart
+                :labels="typeAllocation.labels"
+                :values="typeAllocation.values"
+                :colors="typeAllocation.colors"
+              />
+            </div>
+          </div>
+
+          <!-- By Asset -->
+          <div class="bg-gray-800/50 rounded-2xl border border-gray-700 p-5">
+            <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase mb-3">By Asset</p>
+            <div class="h-56">
+              <AllocationPieChart
+                :labels="assetAllocation.labels"
+                :values="assetAllocation.values"
+                :colors="assetAllocation.colors"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Metrics table -->
+        <div class="bg-gray-800/50 rounded-2xl border border-gray-700 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-700">
+                <th class="text-left text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Asset</th>
+                <th class="text-right text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Owned</th>
+                <th class="text-right text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Cost Basis</th>
+                <th class="text-right text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Value</th>
+                <th class="text-right text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Unrealized Gain</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="asset in sortedFilteredAssets"
+                :key="'tbl-' + asset.id"
+                class="border-b border-gray-700/50 last:border-0 hover:bg-gray-700/30 transition-colors"
+              >
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <div
+                      class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                      :style="{ backgroundColor: iconColor(asset.symbol), color: '#fff' }"
+                    >
+                      {{ asset.symbol.slice(0, 2).toUpperCase() }}
+                    </div>
+                    <span class="text-white font-semibold">{{ asset.symbol.toUpperCase() }}</span>
+                  </div>
+                </td>
+                <td class="text-right text-gray-300 px-4 py-3">{{ asset.quantity }}</td>
+                <td class="text-right text-gray-300 px-4 py-3">{{ formatCurrency(convert(asset.purchasePrice * asset.quantity)) }}</td>
+                <td class="text-right text-white font-semibold px-4 py-3">{{ formatCurrency(convert(asset.currentPrice * asset.quantity)) }}</td>
+                <td class="text-right px-4 py-3">
+                  <span :class="assetGain(asset) >= 0 ? 'text-emerald-400' : 'text-red-400'" class="font-semibold">
+                    {{ assetGain(asset) >= 0 ? '+' : '-' }}{{ formatCurrency(Math.abs(convert(assetGain(asset)))) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </template>
   </div>
 </template>
@@ -201,7 +274,7 @@ definePageMeta({ middleware: 'auth' })
 
 const store = usePortfolioStore()
 const { refreshAllPrices } = useMarketData()
-const { fetchAssetHistory, clearCache } = useHistoricalPrices()
+const { fetchAssetHistory, fetchAllStockHistories, clearCache } = useHistoricalPrices()
 const { selectedCurrency, currencySymbol, convert, toggleCurrency, loadPreference, fetchEurRate } = useCurrency()
 
 // ── Asset type filter ───────────────────────────────────────────────
@@ -267,13 +340,29 @@ async function loadChart() {
 
   chartLoading.value = true
   try {
-    // Fetch history for each asset in parallel
-    const histories = await Promise.all(
-      assets.map(async (asset) => ({
+    // Separate crypto and stock assets
+    const cryptoAssets = assets.filter(a => a.type === 'crypto')
+    const stockAssets = assets.filter(a => a.type === 'stock')
+
+    // Fetch crypto history in parallel (CoinGecko is generous with rate limits)
+    const cryptoHistories = await Promise.all(
+      cryptoAssets.map(async (asset) => ({
         asset,
-        points: await fetchAssetHistory(asset.symbol, asset.type, selectedPeriod.value),
+        points: await fetchAssetHistory(asset.symbol, 'crypto', selectedPeriod.value),
       })),
     )
+
+    // Fetch stock history sequentially with stagger to avoid Alpha Vantage rate limits
+    const stockPointsMap = await fetchAllStockHistories(
+      stockAssets.map(a => ({ symbol: a.symbol, type: 'stock' as const })),
+      selectedPeriod.value,
+    )
+    const stockHistories = stockAssets.map(asset => ({
+      asset,
+      points: stockPointsMap.get(asset.symbol) || [],
+    }))
+
+    const histories = [...cryptoHistories, ...stockHistories]
 
     // Find the asset with the most data points to use as the time axis
     const maxHistory = histories.reduce((a, b) => a.points.length >= b.points.length ? a : b)
@@ -290,11 +379,9 @@ async function loadChart() {
       let total = 0
       for (const { asset, points } of histories) {
         if (points.length === 0) {
-          // No history — use current price
           total += asset.currentPrice * asset.quantity
           continue
         }
-        // Find closest price point at or before this timestamp
         let price = points[0].price
         for (const pt of points) {
           if (pt.timestamp <= ts) price = pt.price
@@ -305,7 +392,6 @@ async function loadChart() {
       return parseFloat(total.toFixed(2))
     })
 
-    // Format labels based on period
     const formatter = labelFormatter(selectedPeriod.value)
     chartLabels.value = timestamps.map(formatter)
     chartValues.value = values
@@ -340,6 +426,8 @@ function selectPeriod(p: TimePeriod) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
+const PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#a855f7', '#14b8a6', '#eab308', '#6366f1', '#22c55e', '#fb923c']
+
 function assetGain(a: Asset): number {
   return (a.currentPrice - a.purchasePrice) * a.quantity
 }
@@ -348,6 +436,34 @@ function assetGainPct(a: Asset): number {
   if (a.purchasePrice === 0) return 0
   return ((a.currentPrice - a.purchasePrice) / a.purchasePrice) * 100
 }
+
+// ── Allocation data ─────────────────────────────────────────────────
+const typeAllocation = computed(() => {
+  const typeMap: Record<string, number> = {}
+  for (const a of filteredAssets.value) {
+    const label = a.type === 'crypto' ? 'Crypto' : 'Stocks'
+    typeMap[label] = (typeMap[label] || 0) + a.currentPrice * a.quantity
+  }
+  const labels = Object.keys(typeMap)
+  const values = labels.map(l => parseFloat(typeMap[l].toFixed(2)))
+  const colors = labels.map((_, i) => PALETTE[i % PALETTE.length])
+  return { labels, values, colors }
+})
+
+const assetAllocation = computed(() => {
+  const labels: string[] = []
+  const values: number[] = []
+  const colors: string[] = []
+  for (const [i, a] of filteredAssets.value.entries()) {
+    const val = a.currentPrice * a.quantity
+    if (val > 0) {
+      labels.push(a.symbol.toUpperCase())
+      values.push(parseFloat(val.toFixed(2)))
+      colors.push(PALETTE[i % PALETTE.length])
+    }
+  }
+  return { labels, values, colors }
+})
 
 function formatCurrency(n: number): string {
   return currencySymbol.value + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -385,7 +501,8 @@ onMounted(async () => {
   fetchEurRate()
   await store.fetchAssets()
   if (store.assets.length > 0) {
-    refreshAllPrices()
+    // Await prices first so GLOBAL_QUOTE calls finish before TIME_SERIES calls
+    await refreshAllPrices()
     loadChart()
   }
 })
