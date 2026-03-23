@@ -1,42 +1,7 @@
 <template>
   <div>
-    <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-2xl font-bold text-white">Dashboard</h1>
-        <p v-if="store.lastRefreshed" class="text-gray-400 text-sm mt-1">
-          Last updated: {{ formatDate(store.lastRefreshed) }}
-        </p>
-      </div>
-      <div class="flex items-center gap-3">
-        <NuxtLink
-          to="/assets"
-          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          + Add Asset
-        </NuxtLink>
-        <button
-          class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
-          :disabled="store.isLoading"
-          @click="refresh"
-        >
-          <svg
-            class="w-4 h-4"
-            :class="{ 'animate-spin': store.isLoading }"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Refresh
-        </button>
-      </div>
-    </div>
-
     <!-- Error banner -->
-    <div v-if="store.error" class="mb-6 bg-red-900/30 border border-red-700 rounded-xl p-4 flex items-center gap-3">
+    <div v-if="store.error" class="mb-4 bg-red-900/30 border border-red-700 rounded-xl p-3 flex items-center gap-3">
       <svg class="w-5 h-5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -45,7 +10,7 @@
     </div>
 
     <!-- Empty state -->
-    <div v-if="store.assets.length === 0" class="text-center py-20">
+    <div v-if="!store.isLoading && store.assets.length === 0" class="text-center py-20">
       <div class="bg-gray-800 rounded-2xl p-10 max-w-md mx-auto border border-gray-700">
         <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -62,143 +27,360 @@
       </div>
     </div>
 
-    <template v-else>
-      <!-- Stats row -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatsCard
-          label="Total Portfolio Value"
-          :value="`$${store.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`"
-          icon-bg-class="bg-blue-900/50"
+    <template v-if="store.assets.length > 0">
+      <!-- Asset type filter tabs -->
+      <div class="flex items-center gap-2 mb-6">
+        <button
+          v-for="tab in assetTabs"
+          :key="tab.value"
+          class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors border"
+          :class="activeTab === tab.value
+            ? 'bg-white text-gray-900 border-white'
+            : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400 hover:text-gray-200'"
+          @click="activeTab = tab.value"
         >
-          <template #icon>
-            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </template>
-        </StatsCard>
-
-        <StatsCard
-          label="Total Cost Basis"
-          :value="`$${store.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`"
-          icon-bg-class="bg-gray-700"
-        >
-          <template #icon>
-            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-            </svg>
-          </template>
-        </StatsCard>
-
-        <StatsCard
-          label="Total Profit / Loss"
-          :value="`${store.totalProfitLoss >= 0 ? '+' : ''}$${store.totalProfitLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`"
-          :badge="store.totalProfitLossPercent"
-          :badge-positive="store.totalProfitLoss >= 0"
-          icon-bg-class="bg-emerald-900/50"
-        >
-          <template #icon>
-            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-          </template>
-        </StatsCard>
-
-        <StatsCard
-          label="Assets Tracked"
-          :value="String(store.assets.length)"
-          icon-bg-class="bg-purple-900/50"
-        >
-          <template #icon>
-            <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-          </template>
-        </StatsCard>
+          {{ tab.label }}
+        </button>
       </div>
 
-      <!-- Charts row -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <!-- Allocation Pie Chart -->
-        <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
-          <h2 class="text-base font-semibold text-white mb-4">Portfolio Allocation</h2>
-          <div class="h-72">
-            <AllocationPieChart
-              :labels="store.allocationData.labels"
-              :values="store.allocationData.values"
-              :colors="store.allocationData.colors"
-            />
-          </div>
+      <!-- Total Worth section -->
+      <div class="mb-2">
+        <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase">Total Worth</p>
+        <div class="flex items-baseline gap-3 mt-1">
+          <span class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
+            {{ formatCurrency(filteredTotalValue) }}
+          </span>
+          <span class="text-gray-400 text-lg font-medium">USD</span>
+          <button
+            class="ml-1 text-gray-500 hover:text-gray-300 transition-colors"
+            title="Refresh prices"
+            :disabled="store.isLoading"
+            @click="refresh"
+          >
+            <svg
+              class="w-5 h-5"
+              :class="{ 'animate-spin': store.isLoading }"
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
         </div>
-
-        <!-- P&L Bar Chart -->
-        <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
-          <h2 class="text-base font-semibold text-white mb-4">Profit / Loss by Asset</h2>
-          <div class="h-72">
-            <ProfitLossBarChart :assets="profitLossData" />
-          </div>
+        <!-- P&L summary -->
+        <div class="flex items-center gap-3 mt-1">
+          <span class="text-sm font-semibold" :class="filteredProfitLoss >= 0 ? 'text-emerald-400' : 'text-red-400'">
+            {{ filteredProfitLoss >= 0 ? '+' : '' }}{{ formatCurrency(filteredProfitLoss) }}
+          </span>
+          <span
+            class="text-xs font-bold px-1.5 py-0.5 rounded"
+            :class="filteredProfitLoss >= 0 ? 'bg-emerald-900/60 text-emerald-400' : 'bg-red-900/60 text-red-400'"
+          >
+            {{ filteredProfitLoss >= 0 ? '+' : '' }}{{ filteredPLPercent.toFixed(2) }}%
+          </span>
         </div>
       </div>
 
-      <!-- Asset list -->
-      <div>
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-base font-semibold text-white">Holdings</h2>
-          <NuxtLink to="/assets" class="text-blue-400 hover:text-blue-300 text-sm transition-colors">
-            Manage →
-          </NuxtLink>
-        </div>
-        <div class="space-y-3">
-          <AssetCard
-            v-for="asset in store.sortedAssets"
-            :key="asset.id"
-            v-bind="asset"
-            @remove="store.removeAsset(asset.id)"
+      <!-- Portfolio chart -->
+      <div class="mt-4 mb-2">
+        <div class="h-64 sm:h-72">
+          <PortfolioChart
+            :labels="chartLabels"
+            :values="chartValues"
+            :loading="chartLoading"
+            :positive="filteredProfitLoss >= 0"
           />
         </div>
+      </div>
+
+      <!-- Time period selector -->
+      <div class="flex items-center justify-center gap-1 mb-8">
+        <button
+          v-for="p in periods"
+          :key="p"
+          class="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
+          :class="selectedPeriod === p
+            ? 'bg-gray-700 text-white'
+            : 'text-gray-500 hover:text-gray-300'"
+          @click="selectPeriod(p)"
+        >
+          {{ p }}
+        </button>
+      </div>
+
+      <!-- Sort & manage row -->
+      <div class="flex items-center justify-between mb-4">
+        <NuxtLink to="/assets" class="text-blue-400 hover:text-blue-300 text-sm transition-colors flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Asset
+        </NuxtLink>
+        <div class="relative">
+          <select
+            v-model="sortMode"
+            class="appearance-none bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded-full px-4 py-1.5 pr-8 focus:outline-none focus:ring-1 focus:ring-gray-600 cursor-pointer"
+          >
+            <option value="value-desc">Highest value</option>
+            <option value="gains-desc">Absolute gains (high to low)</option>
+            <option value="gains-asc">Absolute gains (low to high)</option>
+            <option value="pct-desc">% gains (high to low)</option>
+            <option value="pct-asc">% gains (low to high)</option>
+          </select>
+          <svg class="w-4 h-4 text-gray-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+
+      <!-- Holdings list -->
+      <div class="space-y-1">
+        <div
+          v-for="asset in sortedFilteredAssets"
+          :key="asset.id"
+          class="flex items-center gap-3 py-3 px-3 rounded-xl hover:bg-gray-800/60 transition-colors group"
+        >
+          <!-- Icon -->
+          <div
+            class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+            :style="{ backgroundColor: iconColor(asset.symbol), color: '#fff' }"
+          >
+            {{ asset.symbol.slice(0, 3).toUpperCase() }}
+          </div>
+
+          <!-- Name & details -->
+          <div class="flex-1 min-w-0">
+            <p class="text-white font-semibold text-sm">{{ asset.symbol.toUpperCase() }}</p>
+            <p class="text-gray-500 text-xs">
+              {{ asset.quantity }} | ${{ asset.purchasePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+            </p>
+          </div>
+
+          <!-- Value & gain -->
+          <div class="text-right shrink-0">
+            <p class="text-white font-semibold text-sm">
+              {{ formatCurrency(asset.currentPrice * asset.quantity) }}
+            </p>
+            <div class="flex items-center justify-end gap-1.5">
+              <span class="text-xs" :class="assetGain(asset) >= 0 ? 'text-emerald-400' : 'text-red-400'">
+                {{ assetGain(asset) >= 0 ? '+' : '' }}{{ formatCurrency(assetGain(asset)) }}
+              </span>
+              <span
+                class="text-[10px] font-bold px-1 py-0.5 rounded"
+                :class="assetGain(asset) >= 0 ? 'bg-emerald-900/60 text-emerald-400' : 'bg-red-900/60 text-red-400'"
+              >
+                {{ assetGain(asset) >= 0 ? '+' : '' }}{{ assetGainPct(asset).toFixed(2) }}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer summary -->
+      <div class="mt-6 pt-4 border-t border-gray-800 flex items-center justify-between text-sm text-gray-500">
+        <span>{{ filteredAssets.length }} asset{{ filteredAssets.length === 1 ? '' : 's' }}</span>
+        <span v-if="store.lastRefreshed">Updated {{ timeAgo(store.lastRefreshed) }}</span>
       </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { usePortfolioStore } from '~/stores/portfolio'
+import { usePortfolioStore, type Asset } from '~/stores/portfolio'
 import { useMarketData } from '~/composables/useMarketData'
+import { useHistoricalPrices, type TimePeriod } from '~/composables/useHistoricalPrices'
 
 definePageMeta({ middleware: 'auth' })
 
 const store = usePortfolioStore()
 const { refreshAllPrices } = useMarketData()
+const { fetchAssetHistory } = useHistoricalPrices()
 
-// Load assets from API on mount
+// ── Asset type filter ───────────────────────────────────────────────
+const assetTabs = [
+  { label: 'All', value: 'all' },
+  { label: 'Crypto', value: 'crypto' },
+  { label: 'Stocks', value: 'stock' },
+] as const
+
+type TabValue = 'all' | 'crypto' | 'stock'
+const activeTab = ref<TabValue>('all')
+
+const filteredAssets = computed(() => {
+  if (activeTab.value === 'all') return store.assets
+  return store.assets.filter(a => a.type === activeTab.value)
+})
+
+const filteredTotalValue = computed(() =>
+  filteredAssets.value.reduce((sum, a) => sum + a.currentPrice * a.quantity, 0),
+)
+const filteredTotalCost = computed(() =>
+  filteredAssets.value.reduce((sum, a) => sum + a.purchasePrice * a.quantity, 0),
+)
+const filteredProfitLoss = computed(() => filteredTotalValue.value - filteredTotalCost.value)
+const filteredPLPercent = computed(() => {
+  if (filteredTotalCost.value === 0) return 0
+  return (filteredProfitLoss.value / filteredTotalCost.value) * 100
+})
+
+// ── Sorting ─────────────────────────────────────────────────────────
+const sortMode = ref('value-desc')
+
+const sortedFilteredAssets = computed(() => {
+  const arr = [...filteredAssets.value]
+  switch (sortMode.value) {
+    case 'gains-desc':
+      return arr.sort((a, b) => assetGain(b) - assetGain(a))
+    case 'gains-asc':
+      return arr.sort((a, b) => assetGain(a) - assetGain(b))
+    case 'pct-desc':
+      return arr.sort((a, b) => assetGainPct(b) - assetGainPct(a))
+    case 'pct-asc':
+      return arr.sort((a, b) => assetGainPct(a) - assetGainPct(b))
+    default: // value-desc
+      return arr.sort((a, b) => b.currentPrice * b.quantity - a.currentPrice * a.quantity)
+  }
+})
+
+// ── Period selection & chart data ───────────────────────────────────
+const periods: TimePeriod[] = ['1H', '1D', '1W', '1M', 'YTD', '1Y', 'ALL']
+const selectedPeriod = ref<TimePeriod>('1D')
+const chartLabels = ref<string[]>([])
+const chartValues = ref<number[]>([])
+const chartLoading = ref(false)
+
+async function loadChart() {
+  const assets = filteredAssets.value
+  if (assets.length === 0) {
+    chartLabels.value = []
+    chartValues.value = []
+    return
+  }
+
+  chartLoading.value = true
+  try {
+    // Fetch history for each asset in parallel
+    const histories = await Promise.all(
+      assets.map(async (asset) => ({
+        asset,
+        points: await fetchAssetHistory(asset.symbol, asset.type, selectedPeriod.value),
+      })),
+    )
+
+    // Find the asset with the most data points to use as the time axis
+    const maxHistory = histories.reduce((a, b) => a.points.length >= b.points.length ? a : b)
+    if (maxHistory.points.length === 0) {
+      chartLabels.value = []
+      chartValues.value = []
+      return
+    }
+
+    const timestamps = maxHistory.points.map(p => p.timestamp)
+
+    // For each timestamp, compute total portfolio value
+    const values = timestamps.map((ts) => {
+      let total = 0
+      for (const { asset, points } of histories) {
+        if (points.length === 0) {
+          // No history — use current price
+          total += asset.currentPrice * asset.quantity
+          continue
+        }
+        // Find closest price point at or before this timestamp
+        let price = points[0].price
+        for (const pt of points) {
+          if (pt.timestamp <= ts) price = pt.price
+          else break
+        }
+        total += price * asset.quantity
+      }
+      return parseFloat(total.toFixed(2))
+    })
+
+    // Format labels based on period
+    const formatter = labelFormatter(selectedPeriod.value)
+    chartLabels.value = timestamps.map(formatter)
+    chartValues.value = values
+  } catch {
+    chartLabels.value = []
+    chartValues.value = []
+  } finally {
+    chartLoading.value = false
+  }
+}
+
+function labelFormatter(period: TimePeriod): (ts: number) => string {
+  return (ts: number) => {
+    const d = new Date(ts)
+    switch (period) {
+      case '1H':
+      case '1D':
+        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      case '1W':
+        return d.toLocaleDateString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+      case '1M':
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      default:
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+    }
+  }
+}
+
+function selectPeriod(p: TimePeriod) {
+  selectedPeriod.value = p
+  loadChart()
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+function assetGain(a: Asset): number {
+  return (a.currentPrice - a.purchasePrice) * a.quantity
+}
+
+function assetGainPct(a: Asset): number {
+  if (a.purchasePrice === 0) return 0
+  return ((a.currentPrice - a.purchasePrice) / a.purchasePrice) * 100
+}
+
+function formatCurrency(n: number): string {
+  return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function iconColor(symbol: string): string {
+  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899']
+  let hash = 0
+  for (let i = 0; i < symbol.length; i++) {
+    hash = (hash << 5) - hash + symbol.charCodeAt(i)
+    hash |= 0
+  }
+  return colors[Math.abs(hash) % colors.length]
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+async function refresh() {
+  await refreshAllPrices()
+  loadChart()
+}
+
+// ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {
   await store.fetchAssets()
   if (store.assets.length > 0) {
     refreshAllPrices()
+    loadChart()
   }
 })
 
-async function refresh() {
-  await refreshAllPrices()
-}
-
-const profitLossData = computed(() =>
-  store.sortedAssets.map(a => ({
-    symbol: a.symbol,
-    profitLoss: (a.currentPrice - a.purchasePrice) * a.quantity,
-    profitLossPercent:
-      a.purchasePrice > 0
-        ? ((a.currentPrice - a.purchasePrice) / a.purchasePrice) * 100
-        : 0,
-  })),
-)
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString()
-}
+// Reload chart when tab changes
+watch(activeTab, () => loadChart())
 
 useHead({ title: 'Dashboard – Portfolio Tracker' })
 </script>
