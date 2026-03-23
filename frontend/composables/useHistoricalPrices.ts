@@ -9,27 +9,13 @@ interface PricePoint {
 
 // CoinGecko market_chart params per time period
 const CG_PARAMS: Record<TimePeriod, { days: string; interval?: string }> = {
-  '1H':  { days: '1',   interval: undefined },   // 5-min granularity auto
+  '1H':  { days: '1',   interval: undefined },
   '1D':  { days: '1' },
   '1W':  { days: '7' },
   '1M':  { days: '30' },
-  'YTD': { days: '365' },                        // will be trimmed client-side
+  'YTD': { days: '365' },
   '1Y':  { days: '365' },
   'ALL': { days: 'max' },
-}
-
-// Alpha Vantage function per period
-function avParams(period: TimePeriod): { fn: string; interval?: string; outputsize: string } {
-  switch (period) {
-    case '1H':
-    case '1D':
-      return { fn: 'TIME_SERIES_INTRADAY', interval: '5min', outputsize: 'full' }
-    case '1W':
-    case '1M':
-      return { fn: 'TIME_SERIES_DAILY', outputsize: 'compact' }
-    default:
-      return { fn: 'TIME_SERIES_DAILY', outputsize: 'full' }
-  }
 }
 
 function cutoffTimestamp(period: TimePeriod): number {
@@ -44,6 +30,10 @@ function cutoffTimestamp(period: TimePeriod): number {
     case 'ALL': return 0
   }
 }
+
+// ── Caches: fetch once per stock, derive all periods client-side ───
+const stockDailyCache = new Map<string, PricePoint[]>()
+const stockIntradayCache = new Map<string, PricePoint[]>()
 
 export function useHistoricalPrices() {
   const config = useRuntimeConfig()
@@ -72,40 +62,92 @@ export function useHistoricalPrices() {
     }
   }
 
-  async function fetchStockHistory(symbol: string, period: TimePeriod): Promise<PricePoint[]> {
+  /**
+   * Fetch and cache Alpha Vantage daily data for a stock symbol.
+   * All longer periods (1W, 1M, YTD, 1Y, ALL) are derived from this one request.
+   */
+  async function ensureStockDailyCache(symbol: string): Promise<PricePoint[]> {
+    const key = symbol.toUpperCase()
+    if (stockDailyCache.has(key)) return stockDailyCache.get(key)!
+
     const apiKey = config.public.alphaVantageApiKey
     if (!apiKey) return []
 
-    const p = avParams(period)
-    let url = `https://www.alphavantage.co/query?function=${p.fn}&symbol=${symbol.toUpperCase()}&apikey=${apiKey}&outputsize=${p.outputsize}`
-    if (p.interval) url += `&interval=${p.interval}`
-
     try {
+      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${key}&apikey=${apiKey}&outputsize=full`
       const data = await $fetch<Record<string, any>>(url)
-      // Alpha Vantage returns data under a key like "Time Series (5min)" or "Time Series (Daily)"
       const seriesKey = Object.keys(data).find(k => k.startsWith('Time Series'))
-      if (!seriesKey) return []
-
-      const series = data[seriesKey] as Record<string, Record<string, string>>
-      const cutoff = cutoffTimestamp(period)
-      const points: PricePoint[] = []
-
-      for (const [dateStr, values] of Object.entries(series)) {
-        const ts = new Date(dateStr).getTime()
-        if (ts >= cutoff) {
-          points.push({ timestamp: ts, price: parseFloat(values['4. close']) })
-        }
+      if (!seriesKey) {
+        // Rate limited or error — cache empty to avoid retrying immediately
+        stockDailyCache.set(key, [])
+        return []
       }
 
-      return points.sort((a, b) => a.timestamp - b.timestamp)
+      const series = data[seriesKey] as Record<string, Record<string, string>>
+      const points: PricePoint[] = []
+      for (const [dateStr, values] of Object.entries(series)) {
+        points.push({ timestamp: new Date(dateStr).getTime(), price: parseFloat(values['4. close']) })
+      }
+      points.sort((a, b) => a.timestamp - b.timestamp)
+      stockDailyCache.set(key, points)
+      return points
     } catch {
+      stockDailyCache.set(key, [])
       return []
     }
   }
 
   /**
-   * Fetch historical price data for a single asset.
+   * Fetch and cache Alpha Vantage intraday (5min) data for a stock symbol.
+   * Used for 1H and 1D periods.
    */
+  async function ensureStockIntradayCache(symbol: string): Promise<PricePoint[]> {
+    const key = symbol.toUpperCase()
+    if (stockIntradayCache.has(key)) return stockIntradayCache.get(key)!
+
+    const apiKey = config.public.alphaVantageApiKey
+    if (!apiKey) return []
+
+    try {
+      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${key}&interval=5min&apikey=${apiKey}&outputsize=full`
+      const data = await $fetch<Record<string, any>>(url)
+      const seriesKey = Object.keys(data).find(k => k.startsWith('Time Series'))
+      if (!seriesKey) {
+        stockIntradayCache.set(key, [])
+        return []
+      }
+
+      const series = data[seriesKey] as Record<string, Record<string, string>>
+      const points: PricePoint[] = []
+      for (const [dateStr, values] of Object.entries(series)) {
+        points.push({ timestamp: new Date(dateStr).getTime(), price: parseFloat(values['4. close']) })
+      }
+      points.sort((a, b) => a.timestamp - b.timestamp)
+      stockIntradayCache.set(key, points)
+      return points
+    } catch {
+      stockIntradayCache.set(key, [])
+      return []
+    }
+  }
+
+  async function fetchStockHistory(symbol: string, period: TimePeriod): Promise<PricePoint[]> {
+    const cutoff = cutoffTimestamp(period)
+    let allPoints: PricePoint[]
+
+    if (period === '1H' || period === '1D') {
+      // Use intraday cache, fall back to daily if empty
+      allPoints = await ensureStockIntradayCache(symbol)
+      if (allPoints.length === 0) {
+        allPoints = await ensureStockDailyCache(symbol)
+      }
+    } else {
+      allPoints = await ensureStockDailyCache(symbol)
+    }
+
+    return allPoints.filter(p => p.timestamp >= cutoff)
+  }
+
   async function fetchAssetHistory(
     symbol: string,
     type: 'crypto' | 'stock',
@@ -116,5 +158,11 @@ export function useHistoricalPrices() {
       : fetchStockHistory(symbol, period)
   }
 
-  return { fetchAssetHistory }
+  /** Clear caches (e.g. on manual refresh) */
+  function clearCache() {
+    stockDailyCache.clear()
+    stockIntradayCache.clear()
+  }
+
+  return { fetchAssetHistory, clearCache }
 }

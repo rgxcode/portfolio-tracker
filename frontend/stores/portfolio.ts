@@ -131,18 +131,25 @@ export const usePortfolioStore = defineStore('portfolio', {
     },
 
     async updateAssetPrice(id: string, currentPrice: number, change24h: number) {
+      // Update local state immediately so the UI reflects fresh prices
+      const idx = this.assets.findIndex(a => a.id === id)
+      if (idx !== -1) {
+        this.assets[idx] = {
+          ...this.assets[idx],
+          currentPrice,
+          change24h,
+          lastUpdated: new Date().toISOString(),
+        }
+      }
+      // Persist to backend (fire-and-forget)
       const { apiFetch } = useApi()
       try {
-        const updated = await apiFetch<any>(`/api/assets/${id}/price`, {
+        await apiFetch(`/api/assets/${id}/price`, {
           method: 'PATCH',
           body: { currentPrice, change24h },
         })
-        const idx = this.assets.findIndex(a => a.id === id)
-        if (idx !== -1) {
-          this.assets[idx] = normalizeAsset(updated)
-        }
       } catch {
-        // Silently fail price updates — they'll retry on next refresh
+        // Backend sync failed — local state already updated
       }
     },
 

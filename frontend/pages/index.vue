@@ -48,9 +48,15 @@
         <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase">Total Worth</p>
         <div class="flex items-baseline gap-3 mt-1">
           <span class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
-            {{ formatCurrency(filteredTotalValue) }}
+            {{ formatCurrency(convert(filteredTotalValue)) }}
           </span>
-          <span class="text-gray-400 text-lg font-medium">USD</span>
+          <button
+            class="text-gray-400 text-lg font-medium hover:text-white transition-colors"
+            title="Switch currency"
+            @click="toggleCurrency"
+          >
+            {{ selectedCurrency }} ⇆
+          </button>
           <button
             class="ml-1 text-gray-500 hover:text-gray-300 transition-colors"
             title="Refresh prices"
@@ -70,7 +76,7 @@
         <!-- P&L summary -->
         <div class="flex items-center gap-3 mt-1">
           <span class="text-sm font-semibold" :class="filteredProfitLoss >= 0 ? 'text-emerald-400' : 'text-red-400'">
-            {{ filteredProfitLoss >= 0 ? '+' : '' }}{{ formatCurrency(filteredProfitLoss) }}
+            {{ filteredProfitLoss >= 0 ? '+' : '-' }}{{ formatCurrency(Math.abs(convert(filteredProfitLoss))) }}
           </span>
           <span
             class="text-xs font-bold px-1.5 py-0.5 rounded"
@@ -152,18 +158,18 @@
           <div class="flex-1 min-w-0">
             <p class="text-white font-semibold text-sm">{{ asset.symbol.toUpperCase() }}</p>
             <p class="text-gray-500 text-xs">
-              {{ asset.quantity }} | ${{ asset.purchasePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+              {{ asset.quantity }} | {{ currencySymbol }}{{ convert(asset.purchasePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
             </p>
           </div>
 
           <!-- Value & gain -->
           <div class="text-right shrink-0">
             <p class="text-white font-semibold text-sm">
-              {{ formatCurrency(asset.currentPrice * asset.quantity) }}
+              {{ formatCurrency(convert(asset.currentPrice * asset.quantity)) }}
             </p>
             <div class="flex items-center justify-end gap-1.5">
               <span class="text-xs" :class="assetGain(asset) >= 0 ? 'text-emerald-400' : 'text-red-400'">
-                {{ assetGain(asset) >= 0 ? '+' : '' }}{{ formatCurrency(assetGain(asset)) }}
+                {{ assetGain(asset) >= 0 ? '+' : '-' }}{{ formatCurrency(Math.abs(convert(assetGain(asset)))) }}
               </span>
               <span
                 class="text-[10px] font-bold px-1 py-0.5 rounded"
@@ -189,12 +195,14 @@
 import { usePortfolioStore, type Asset } from '~/stores/portfolio'
 import { useMarketData } from '~/composables/useMarketData'
 import { useHistoricalPrices, type TimePeriod } from '~/composables/useHistoricalPrices'
+import { useCurrency } from '~/composables/useCurrency'
 
 definePageMeta({ middleware: 'auth' })
 
 const store = usePortfolioStore()
 const { refreshAllPrices } = useMarketData()
-const { fetchAssetHistory } = useHistoricalPrices()
+const { fetchAssetHistory, clearCache } = useHistoricalPrices()
+const { selectedCurrency, currencySymbol, convert, toggleCurrency, loadPreference, fetchEurRate } = useCurrency()
 
 // ── Asset type filter ───────────────────────────────────────────────
 const assetTabs = [
@@ -342,7 +350,7 @@ function assetGainPct(a: Asset): number {
 }
 
 function formatCurrency(n: number): string {
-  return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return currencySymbol.value + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function iconColor(symbol: string): string {
@@ -366,12 +374,15 @@ function timeAgo(iso: string): string {
 }
 
 async function refresh() {
+  clearCache()
   await refreshAllPrices()
   loadChart()
 }
 
 // ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {
+  loadPreference()
+  fetchEurRate()
   await store.fetchAssets()
   if (store.assets.length > 0) {
     refreshAllPrices()
