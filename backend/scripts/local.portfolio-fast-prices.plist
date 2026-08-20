@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Fast price agent (BTC + ETH every 30s).
+
+  NOT INSTALLED BY DEFAULT. This agent is a long-running process, so unlike the
+  5-minute job it uses KeepAlive to stay up rather than StartInterval to be
+  re-run. To enable:
+
+      cp backend/scripts/local.portfolio-fast-prices.plist ~/Library/LaunchAgents/
+      launchctl load ~/Library/LaunchAgents/local.portfolio-fast-prices.plist
+
+  To stop and remove:
+
+      launchctl unload ~/Library/LaunchAgents/local.portfolio-fast-prices.plist
+      rm ~/Library/LaunchAgents/local.portfolio-fast-prices.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>local.portfolio-fast-prices</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rmm/.nvm/versions/node/v24.14.0/bin/node</string>
+        <string>/Users/rmm/portfolio-tracker/backend/src/agents/fastPriceAgent.js</string>
+    </array>
+    <!-- Long-running: restart it if it ever exits. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Don't hammer a failing endpoint if the process crash-loops. -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+    <key>WorkingDirectory</key>
+    <string>/Users/rmm/portfolio-tracker/backend</string>
+    <key>StandardOutPath</key>
+    <string>/Users/rmm/portfolio-tracker/backend/data/fast-prices.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/rmm/portfolio-tracker/backend/data/fast-prices.err.log</string>
+</dict>
+</plist>

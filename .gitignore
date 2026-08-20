@@ -16,6 +16,9 @@ node_modules/
 # Logs
 *.log
 
+# Generated price snapshots (rewritten every 5 min by the fetch job)
+backend/data/
+
 # Editor
 .vscode/
 .idea/

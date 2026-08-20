@@ -19,12 +19,11 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      // Backend API base URL
+      // Backend API base URL — the only origin the browser talks to.
+      // Market data keys deliberately live in backend/.env instead: the browser
+      // never calls a price provider, so shipping keys in the bundle would be
+      // exposure with no purpose.
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:4000',
-      // CoinGecko API key (optional for free tier - add your key here or in .env)
-      coinGeckoApiKey: process.env.NUXT_PUBLIC_COINGECKO_API_KEY || '',
-      // Alpha Vantage API key for stock data
-      alphaVantageApiKey: process.env.NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY || '',
     },
   },
 

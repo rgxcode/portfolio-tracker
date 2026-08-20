@@ -12,6 +12,12 @@ export interface Asset {
   currentPrice: number
   change24h: number
   lastUpdated: string | null
+  /** When the price itself was taken (exchange/source timestamp, not fetch time). */
+  priceAsOf?: string | null
+  /** The same instant rendered in central European time, e.g. "19 Aug 2026, 22:00:01 CEST". */
+  priceAsOfCET?: string | null
+  /** Which provider the price came from. */
+  priceSource?: string | null
 }
 
 export interface PortfolioState {
@@ -130,7 +136,18 @@ export const usePortfolioStore = defineStore('portfolio', {
       }
     },
 
-    async updateAssetPrice(id: string, currentPrice: number, change24h: number) {
+    /**
+     * `persist: false` updates local state only. Used by the LLM poll loop —
+     * writing every asset back to Mongo every few seconds would be pure write
+     * amplification, and prices.json is the source of truth anyway.
+     */
+    async updateAssetPrice(
+      id: string,
+      currentPrice: number,
+      change24h: number,
+      meta?: { asOf?: string, asOfCET?: string, source?: string },
+      persist = true,
+    ) {
       // Update local state immediately so the UI reflects fresh prices
       const idx = this.assets.findIndex(a => a.id === id)
       if (idx !== -1) {
@@ -139,8 +156,14 @@ export const usePortfolioStore = defineStore('portfolio', {
           currentPrice,
           change24h,
           lastUpdated: new Date().toISOString(),
+          // When the price was taken, which for a closed market is well before now
+          priceAsOf: meta?.asOf ?? null,
+          priceAsOfCET: meta?.asOfCET ?? null,
+          priceSource: meta?.source ?? null,
         }
       }
+      if (!persist) return
+
       // Persist to backend (fire-and-forget)
       const { apiFetch } = useApi()
       try {

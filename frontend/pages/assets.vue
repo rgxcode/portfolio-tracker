@@ -18,20 +18,20 @@
       <div>
         <AssetForm @added="onAssetAdded" />
 
-        <!-- API key notice -->
-        <div class="mt-4 bg-yellow-900/20 border border-yellow-700/50 rounded-xl p-4">
-          <h3 class="text-yellow-400 font-semibold text-sm mb-1">⚙️ API Configuration</h3>
-          <ul class="text-yellow-200/70 text-xs space-y-1">
+        <!-- Where prices come from -->
+        <div class="mt-4 bg-gray-800/40 border border-gray-700 rounded-xl p-4">
+          <h3 class="text-gray-300 font-semibold text-sm mb-1">📈 Price data</h3>
+          <ul class="text-gray-400 text-xs space-y-1">
             <li>
-              <strong>Crypto prices</strong>: Powered by CoinGecko (free, no key required).
-              Add <code class="bg-gray-800 px-1 rounded">NUXT_PUBLIC_COINGECKO_API_KEY</code> to your
-              <code class="bg-gray-800 px-1 rounded">.env</code> for higher rate limits.
+              <strong>Crypto</strong>: refreshed every 5 minutes by the local price job.
             </li>
             <li>
-              <strong>Stock prices</strong>: Powered by Alpha Vantage. Add your free key as
-              <code class="bg-gray-800 px-1 rounded">NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY</code> in
-              <code class="bg-gray-800 px-1 rounded">.env</code>.
-              Get one at <span class="underline">alphavantage.co</span>.
+              <strong>Stocks</strong>: refreshed every 15 minutes between 10:00 and 22:00 CET,
+              on weekdays.
+            </li>
+            <li>
+              Prices and charts are served from this app's own database — no API keys are
+              needed in the browser.
             </li>
           </ul>
         </div>

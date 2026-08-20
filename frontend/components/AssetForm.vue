@@ -111,9 +111,12 @@ import { useMarketData } from '~/composables/useMarketData'
 const emit = defineEmits<{ added: [] }>()
 
 const store = usePortfolioStore()
-const { COINGECKO_ID_MAP, refreshAllPrices } = useMarketData()
+const { refreshAllPrices, loadSupportedCrypto, supportedCrypto } = useMarketData()
 
-const supportedSymbols = Object.keys(COINGECKO_ID_MAP).map(s => s.toUpperCase())
+// The tracked-coin list comes from the backend, so the form and the price job
+// can never disagree about which symbols are supported.
+const supportedSymbols = computed(() => supportedCrypto.value)
+onMounted(loadSupportedCrypto)
 
 const form = reactive({
   type: 'crypto' as 'crypto' | 'stock',
@@ -132,7 +135,8 @@ const isValid = computed(() =>
 
 const isSupportedCrypto = computed(() => {
   if (form.type !== 'crypto') return true
-  return !!COINGECKO_ID_MAP[form.symbol.toLowerCase()]
+  if (supportedSymbols.value.length === 0) return true // list not loaded yet
+  return supportedSymbols.value.includes(form.symbol.trim().toUpperCase())
 })
 
 async function handleSubmit() {

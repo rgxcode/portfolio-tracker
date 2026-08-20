@@ -45,7 +45,40 @@
 
       <!-- Total Worth section -->
       <div class="mb-2">
-        <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase">Total Worth</p>
+        <div class="flex items-center justify-between">
+          <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase">Total Worth</p>
+
+          <!-- Price source: the scheduled job vs the LLM agent reading web pages -->
+          <div class="flex items-center gap-0.5 bg-gray-800/70 rounded-full p-0.5 text-[11px] font-semibold">
+            <button
+              class="px-2.5 py-1 rounded-full transition-colors"
+              :class="priceSource === 'standard' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'"
+              title="Prices from the scheduled job (CoinGecko + Yahoo). Covers crypto and stocks."
+              @click="switchSource('standard')"
+            >
+              API
+            </button>
+            <button
+              class="px-2.5 py-1 rounded-full transition-colors flex items-center gap-1.5"
+              :class="priceSource === 'llm' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white'"
+              title="Prices read off web pages by the local LLM agent. Crypto only."
+              @click="switchSource('llm')"
+            >
+              <!-- Pulses on every poll, so a flat price still shows the feed is alive -->
+              <span
+                v-if="priceSource === 'llm'"
+                class="w-1.5 h-1.5 rounded-full bg-white"
+                :class="pollPulse ? 'opacity-100' : 'opacity-30'"
+              />
+              🤖 LLM
+            </button>
+          </div>
+        </div>
+
+        <!-- Provenance for the LLM feed: when the snapshot was written, and by which model -->
+        <p v-if="priceSource === 'llm' && llmMeta" class="text-[10px] text-emerald-500/80 mt-0.5">
+          Read from the web at {{ llmMeta.at }} · {{ llmMeta.model }} · polled {{ pollCount }}×
+        </p>
         <div class="flex items-baseline gap-3 mt-1">
           <span class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
             {{ formatCurrency(convert(filteredTotalValue)) }}
@@ -160,6 +193,11 @@
             <p class="text-gray-500 text-xs">
               {{ asset.quantity }} | {{ currencySymbol }}{{ convert(asset.purchasePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
             </p>
+            <!-- When this price was actually taken, in CET -->
+            <p v-if="asset.priceAsOfCET" class="text-gray-600 text-[10px] mt-0.5">
+              @ {{ asset.priceAsOfCET }}
+              <span v-if="isStale(asset)" class="text-amber-500/80">· stale</span>
+            </p>
           </div>
 
           <!-- Value & gain -->
@@ -185,7 +223,12 @@
       <!-- Footer summary -->
       <div class="mt-6 pt-4 border-t border-gray-800 flex items-center justify-between text-sm text-gray-500">
         <span>{{ filteredAssets.length }} asset{{ filteredAssets.length === 1 ? '' : 's' }}</span>
-        <span v-if="store.lastRefreshed">Updated {{ timeAgo(store.lastRefreshed) }}</span>
+        <div class="text-right">
+          <div v-if="snapshotCET" class="text-xs">Snapshot {{ snapshotCET }}</div>
+          <div v-if="stockWindow" class="text-[10px] text-gray-600">
+            Stocks {{ stockWindow.open ? 'live' : 'paused' }} · {{ stockWindow.status }}
+          </div>
+        </div>
       </div>
 
       <!-- ── Allocation & Metrics Section ─────────────────────────── -->
@@ -273,7 +316,72 @@ import { useCurrency } from '~/composables/useCurrency'
 definePageMeta({ middleware: 'auth' })
 
 const store = usePortfolioStore()
-const { refreshAllPrices } = useMarketData()
+const {
+  refreshAllPrices, pollPrices, stockWindow, snapshotCET,
+  priceSource, setPriceSource, loadSourcePreference,
+} = useMarketData()
+
+/**
+ * The LLM agent rewrites its snapshot roughly every 8s, so the dashboard polls
+ * at the same cadence while that source is selected. The API source is only
+ * rewritten every 5 minutes, so polling it would be wasted requests.
+ */
+const LLM_POLL_MS = 8000
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+// Visible proof the feed is alive. The LLM price can sit unchanged for 30-45s,
+// so without these a working poll looks identical to a broken one.
+const pollCount = ref(0)
+const pollPulse = ref(false)
+const llmMeta = ref<{ at: string, model: string } | null>(null)
+
+async function pollTick() {
+  await pollPrices()
+  pollCount.value++
+  pollPulse.value = true
+  setTimeout(() => { pollPulse.value = false }, 400)
+
+  const first = store.assets.find(a => a.type === 'crypto' && a.priceSource)
+  if (snapshotCET.value) {
+    llmMeta.value = {
+      at: snapshotCET.value.split(', ')[1] ?? snapshotCET.value,
+      model: first?.priceSource ?? 'llm',
+    }
+  }
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollTimer = setInterval(pollTick, LLM_POLL_MS)
+}
+
+/** Poll only in LLM mode, and stop when the tab is hidden. */
+function syncPolling() {
+  const shouldPoll = priceSource.value === 'llm'
+    && (!import.meta.client || document.visibilityState === 'visible')
+  if (shouldPoll) startPolling()
+  else stopPolling()
+}
+
+watch(priceSource, syncPolling)
+onUnmounted(() => {
+  stopPolling()
+  if (import.meta.client) document.removeEventListener('visibilitychange', syncPolling)
+})
+
+/** Switch data source and immediately re-price the portfolio from it. */
+async function switchSource(source: 'standard' | 'llm') {
+  if (priceSource.value === source) return
+  setPriceSource(source)
+  await refreshAllPrices()
+}
 const { fetchAssetHistory, fetchAllStockHistories, clearCache } = useHistoricalPrices()
 const { selectedCurrency, currencySymbol, convert, toggleCurrency, loadPreference, fetchEurRate } = useCurrency()
 
@@ -479,14 +587,16 @@ function iconColor(symbol: string): string {
   return colors[Math.abs(hash) % colors.length]
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
+/**
+ * A price is flagged stale when it is older than its market's refresh rhythm:
+ * crypto updates every 5 min, stocks every 15 min while the CET window is open.
+ * Stocks outside the window are not stale — that close is the correct price.
+ */
+function isStale(asset: { type: string, priceAsOf?: string | null }): boolean {
+  if (!asset.priceAsOf) return false
+  if (asset.type === 'stock' && !stockWindow.value?.open) return false
+  const ageMin = (Date.now() - new Date(asset.priceAsOf).getTime()) / 60000
+  return ageMin > (asset.type === 'crypto' ? 15 : 45)
 }
 
 async function refresh() {
@@ -498,6 +608,9 @@ async function refresh() {
 // ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {
   loadPreference()
+  loadSourcePreference()
+  document.addEventListener('visibilitychange', syncPolling)
+  syncPolling()
   fetchEurRate()
   await store.fetchAssets()
   if (store.assets.length > 0) {

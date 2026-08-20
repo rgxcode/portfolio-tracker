@@ -6,6 +6,7 @@ import cors from 'cors'
 import mongoose from 'mongoose'
 import authRouter from './routes/auth.js'
 import assetsRouter from './routes/assets.js'
+import pricesRouter from './routes/prices.js'
 
 // Load .env manually (avoid dotenv dependency)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -37,6 +38,7 @@ app.use(express.json())
 // Routes
 app.use('/api/auth', authRouter)
 app.use('/api/assets', assetsRouter)
+app.use('/api/prices', pricesRouter)
 
 // Health check
 app.get('/api/health', (_req, res) => {

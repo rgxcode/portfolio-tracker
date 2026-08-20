@@ -1,12 +1,10 @@
 /**
- * Composable for fetching market price data.
+ * Composable for reading market price data.
  *
- * Crypto prices: CoinGecko public API (free, no key required for basic use).
- *   Optional: set NUXT_PUBLIC_COINGECKO_API_KEY in .env for higher rate limits.
- *
- * Stock prices: Alpha Vantage API (free key required).
- *   Set NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY in .env.
- *   Get a free key at https://www.alphavantage.co/support/#api-key
+ * Every price comes from our own backend (`/api/prices`), which serves the
+ * snapshot written by the scheduled job in backend/src/jobs/. The browser makes
+ * no third-party calls, so there are no API keys in this bundle, no CORS, and
+ * no provider rate limit that scales with page views.
  */
 
 import { usePortfolioStore } from '~/stores/portfolio'
@@ -39,66 +37,108 @@ export function useMarketData() {
   const config = useRuntimeConfig()
   const store = usePortfolioStore()
 
+  /** Shape of one quote in the snapshot our backend serves. */
+  interface Quote {
+    price: number
+    change24h: number
+    asOf: string
+    asOfCET: string
+    source: string
+  }
+
+  interface PriceSnapshot {
+    updatedAt: string
+    updatedAtCET: string
+    ageMinutes: number
+    eurRate: number
+    crypto: Record<string, Quote>
+    stocks: Record<string, Quote>
+    stocksUpdatedAtCET: string | null
+    stocksAgeMinutes: number | null
+    stockWindow: { open: boolean, status: string, hoursCET: string }
+  }
+
+  /** Window status from the last snapshot, for display in the UI. */
+  const stockWindow = useState<PriceSnapshot['stockWindow'] | null>('stockWindow', () => null)
+  const snapshotCET = useState<string | null>('snapshotCET', () => null)
+  /** Coins the backend actually tracks — the list the Add Asset form validates against. */
+  const supportedCrypto = useState<string[]>('supportedCrypto', () => [])
+
   /**
-   * Fetches current prices for all crypto assets in the portfolio via CoinGecko.
+   * Which snapshot the dashboard reads.
+   *   'standard' — the 5-minute job (CoinGecko + Yahoo), covers crypto and stocks
+   *   'llm'      — the OpenCode agent reading prices off web pages, crypto only
+   * Persisted so a reload keeps the choice.
    */
-  async function fetchCryptoPrices(symbols: string[]): Promise<void> {
-    if (symbols.length === 0) return
+  const priceSource = useState<'standard' | 'llm'>('priceSource', () => 'standard')
 
-    const coinIds = symbols
-      .map(s => COINGECKO_ID_MAP[s.toLowerCase()])
-      .filter(Boolean)
+  function loadSourcePreference() {
+    if (!import.meta.client) return
+    const saved = localStorage.getItem('priceSource')
+    if (saved === 'llm' || saved === 'standard') priceSource.value = saved
+  }
 
-    if (coinIds.length === 0) return
-
-    const apiKey = config.public.coinGeckoApiKey
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-    }
-    if (apiKey) {
-      headers['x-cg-demo-api-key'] = apiKey
-    }
-
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${coinIds.join(',')}&vs_currencies=usd&include_24hr_change=true`
-
-    const data = await $fetch<Record<string, { usd: number, usd_24h_change: number }>>(url, { headers })
-
-    // Map results back to assets by symbol
-    symbols.forEach((symbol) => {
-      const cgId = COINGECKO_ID_MAP[symbol.toLowerCase()]
-      if (cgId && data[cgId]) {
-        const asset = store.assets.find(a => a.symbol.toLowerCase() === symbol.toLowerCase())
-        if (asset) {
-          store.updateAssetPrice(asset.id, data[cgId].usd, data[cgId].usd_24h_change ?? 0)
-        }
-      }
-    })
+  function setPriceSource(source: 'standard' | 'llm') {
+    priceSource.value = source
+    if (import.meta.client) localStorage.setItem('priceSource', source)
   }
 
   /**
-   * Fetches current price for a single stock via Alpha Vantage.
-   * Requires NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY to be set in .env
+   * Ensure we know which symbols the backend tracks, without forcing a full
+   * price refresh. Used by forms that render before any dashboard fetch.
    */
-  async function fetchStockPrice(symbol: string): Promise<void> {
-    const apiKey = config.public.alphaVantageApiKey
-    if (!apiKey) {
-      console.warn(`[Portfolio Tracker] Alpha Vantage API key not set. Stock prices for ${symbol} will not be updated. Add NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY to your .env file.`)
-      return
+  async function loadSupportedCrypto(): Promise<string[]> {
+    if (supportedCrypto.value.length > 0) return supportedCrypto.value
+    try {
+      const data = await $fetch<PriceSnapshot>(`${config.public.apiBaseUrl}/api/prices`)
+      supportedCrypto.value = Object.keys(data.crypto ?? {})
+    } catch {
+      // Backend unreachable — fall back to the built-in list.
+      supportedCrypto.value = Object.keys(COINGECKO_ID_MAP).map(s => s.toUpperCase())
+    }
+    return supportedCrypto.value
+  }
+
+  /**
+   * One call fetches every price the portfolio needs. The backend serves the
+   * snapshot written by the scheduled job (backend/src/jobs/fetchPrices.js), so
+   * the browser never touches CoinGecko, Yahoo or Alpha Vantage — no CORS, and
+   * no rate limit that scales with page views.
+   */
+  async function fetchAllPrices({ persist = true } = {}): Promise<void> {
+    const endpoint = priceSource.value === 'llm' ? '/api/prices/llm' : '/api/prices'
+    const data = await $fetch<PriceSnapshot>(`${config.public.apiBaseUrl}${endpoint}`)
+
+    // The LLM snapshot has no stock window; leave the standard one in place
+    // rather than blanking the label when the user toggles.
+    if (data.stockWindow) stockWindow.value = data.stockWindow
+    snapshotCET.value = data.updatedAtCET
+    if (priceSource.value === 'standard') {
+      supportedCrypto.value = Object.keys(data.crypto ?? {})
     }
 
-    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol.toUpperCase()}&apikey=${apiKey}`
-    const data = await $fetch<{ 'Global Quote': Record<string, string> }>(url)
+    for (const asset of store.assets) {
+      const bucket = asset.type === 'crypto' ? data.crypto : data.stocks
+      const quote = bucket?.[asset.symbol.toUpperCase()]
+      if (!quote) continue
 
-    const quote = data?.['Global Quote']
-    if (quote && quote['05. price']) {
-      const price = parseFloat(quote['05. price'])
-      const changePercent = parseFloat(
-        (quote['10. change percent'] ?? '0%').replace('%', ''),
-      )
-      const asset = store.assets.find(a => a.symbol.toLowerCase() === symbol.toLowerCase())
-      if (asset) {
-        store.updateAssetPrice(asset.id, price, changePercent)
-      }
+      store.updateAssetPrice(asset.id, quote.price, quote.change24h ?? 0, {
+        asOf: quote.asOf,
+        asOfCET: quote.asOfCET,
+        source: quote.source,
+      }, persist)
+    }
+  }
+
+  /**
+   * Quiet refresh for the poll loop: no spinner, no database writes, no error
+   * banner — a single failed poll shouldn't flash an error over live data.
+   */
+  async function pollPrices(): Promise<void> {
+    try {
+      await fetchAllPrices({ persist: false })
+    } catch {
+      // Next tick will try again.
     }
   }
 
@@ -110,25 +150,7 @@ export function useMarketData() {
     store.setError(null)
 
     try {
-      const cryptoSymbols = store.assets
-        .filter(a => a.type === 'crypto')
-        .map(a => a.symbol)
-
-      const stockSymbols = store.assets
-        .filter(a => a.type === 'stock')
-        .map(a => a.symbol)
-
-      const tasks: Promise<void>[] = []
-
-      if (cryptoSymbols.length > 0) {
-        tasks.push(fetchCryptoPrices(cryptoSymbols))
-      }
-
-      for (const sym of stockSymbols) {
-        tasks.push(fetchStockPrice(sym))
-      }
-
-      await Promise.allSettled(tasks)
+      await fetchAllPrices()
       store.setLastRefreshed(new Date().toISOString())
     }
     catch (err: unknown) {
@@ -142,8 +164,15 @@ export function useMarketData() {
 
   return {
     refreshAllPrices,
-    fetchCryptoPrices,
-    fetchStockPrice,
+    fetchAllPrices,
+    pollPrices,
+    loadSupportedCrypto,
+    supportedCrypto,
+    stockWindow,
+    snapshotCET,
+    priceSource,
+    setPriceSource,
+    loadSourcePreference,
     COINGECKO_ID_MAP,
   }
 }

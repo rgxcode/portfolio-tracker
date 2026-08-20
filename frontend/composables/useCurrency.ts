@@ -12,14 +12,17 @@ export function useCurrency() {
 
   async function fetchEurRate() {
     if (rateLoaded.value) return
+    const config = useRuntimeConfig()
     try {
-      const data = await $fetch<{ rates: { EUR: number } }>(
-        'https://api.frankfurter.app/latest?from=USD&to=EUR',
+      // Served from our own backend — the scheduled price job fetches the rate
+      // alongside crypto prices, so the browser makes no third-party call.
+      const data = await $fetch<{ eurRate: number }>(
+        `${config.public.apiBaseUrl}/api/prices`,
       )
-      eurRate.value = data.rates.EUR
+      eurRate.value = data.eurRate
       rateLoaded.value = true
     } catch {
-      eurRate.value = 0.92 // fallback
+      eurRate.value = 0.86 // fallback if the backend is unreachable
     }
   }
 
