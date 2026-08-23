@@ -1,0 +1,19 @@
+{
+  // Deploy the generated site to Cloudflare as a Worker serving static assets.
+  //
+  // Cloudflare Pages is the older product and no longer accepts new projects on
+  // recently created accounts, so this uses Workers Static Assets instead. For a
+  // prerendered site the two are equivalent: files sit on the same CDN, there is
+  // no cold start, and no server code runs — `main` is deliberately absent, so
+  // this Worker is assets only.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "portfolio-tracker",
+  "compatibility_date": "2026-08-23",
+  "assets": {
+    "directory": ".output/public",
+    // Unmatched paths fall back to the SPA shell so client-side routes still
+    // resolve after a hard refresh. Prerendered routes (/, /assets, /auth) are
+    // real files and are served directly — this only catches everything else.
+    "not_found_handling": "single-page-application"
+  }
+}
