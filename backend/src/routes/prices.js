@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import PriceHistory from '../models/PriceHistory.js'
 import { loadSnapshot, STANDARD, LLM } from '../jobs/snapshotStore.js'
+import { refreshIfStale } from '../agents/llmRefresher.js'
 
 const router = Router()
 
@@ -64,9 +65,16 @@ router.get('/', async (_req, res, next) => {
 router.get('/llm', async (_req, res, next) => {
   try {
     const data = await loadSnapshot(LLM)
+
+    // Fire-and-forget: keeps the snapshot moving while the tab is open without
+    // making this request wait for a 10-40s agent run.
+    const refreshing = refreshIfStale(data)
+
     if (!data) {
       return res.status(503).json({
-        error: 'No LLM price data yet — the agent has not run.',
+        error: refreshing
+          ? 'No LLM price data yet — a first run has just been started.'
+          : 'No LLM price data yet — the agent has not run.',
         hint: 'Run: node src/agents/opencodePriceAgent.js --once',
       })
     }

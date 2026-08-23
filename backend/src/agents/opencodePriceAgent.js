@@ -336,7 +336,14 @@ async function tick() {
 async function loop() {
   const startedAt = Date.now()
   await tick()
-  if (runOnce) return
+  // A single run has to close the database connection itself. Returning here
+  // empties the call stack but not the event loop: the open mongoose socket
+  // keeps the process alive indefinitely, which matters now that the API
+  // spawns this on demand and would otherwise leak a process per refresh.
+  if (runOnce) {
+    await mongoose.disconnect()
+    return
+  }
 
   if (consecutiveErrors >= 5) {
     log(`Stopping after ${consecutiveErrors} consecutive failed runs — check \`opencode models\`.`)
