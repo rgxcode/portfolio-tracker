@@ -27,8 +27,10 @@ try {
 }
 
 const PORT = process.env.PORT || 4000
-const COSMOS_DB_CONNECTION_STRING =
-  process.env.COSMOS_DB_CONNECTION_STRING || 'mongodb://localhost:27017/portfolio-tracker'
+const MONGODB_URI =
+  process.env.MONGODB_URI
+  || process.env.COSMOS_DB_CONNECTION_STRING // legacy name, kept for existing .env files
+  || 'mongodb://localhost:27017/portfolio-tracker'
 
 const app = express()
 
@@ -54,7 +56,7 @@ app.use((err, _req, res, _next) => {
 // Connect to database and start server
 async function start() {
   try {
-    await mongoose.connect(COSMOS_DB_CONNECTION_STRING, {
+    await mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 10000,
     })
     console.log('Connected to database')

@@ -1,0 +1,49 @@
+name: Fetch prices
+
+# Runs the price job on a schedule instead of inside the backend.
+#
+# Why not in the backend: free hosting tiers put a web service to sleep when it
+# is idle, which would silently stop an in-process timer. An external scheduler
+# keeps running regardless of whether anyone is using the app.
+#
+# Cadence: every 15 minutes. That is ~96 runs/day, which fits comfortably in the
+# 2,000 free Actions minutes a private repo gets each month. A 5-minute cadence
+# would not. GitHub also delays scheduled runs under load, so treat the interval
+# as "about every 15 minutes", not a guarantee.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # lets you trigger a run by hand from the Actions tab
+
+# A long run must never overlap the next scheduled one.
+concurrency:
+  group: fetch-prices
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci --omit=dev
+
+      - name: Fetch prices and write the snapshot
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          # Optional. Absent keys just mean the public/keyless path is used.
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+        run: node src/jobs/fetchPrices.js

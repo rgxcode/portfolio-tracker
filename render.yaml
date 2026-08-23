@@ -1,0 +1,31 @@
+# Render blueprint for the backend API.
+#
+# With this file in the repo root, Render can create the service from the repo
+# instead of you filling in a form: New → Blueprint → pick this repo.
+#
+# Note the free plan sleeps after ~15 minutes of inactivity, so the first
+# request after an idle period takes roughly 50 seconds to wake the service.
+# The price job is unaffected — it runs in GitHub Actions, not here.
+services:
+  - type: web
+    name: portfolio-tracker-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: node src/server.js
+    healthCheckPath: /api/health
+    envVars:
+      # Set these in the Render dashboard — sync:false means "prompt me,
+      # don't store the value in the repo".
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: COINGECKO_API_KEY
+        sync: false
+      - key: ALPHA_VANTAGE_API_KEY
+        sync: false
+      - key: NODE_VERSION
+        value: '22'

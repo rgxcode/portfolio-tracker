@@ -9,10 +9,11 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  // Force static preset so all pages are pre-rendered as HTML.
-  // Without this, Azure's Oryx build system causes Nitro to auto-detect
-  // the "azure-swa" preset, which skips page pre-rendering and expects
-  // server-side rendering via Azure Functions.
+  // Force the static preset so every page is pre-rendered to HTML.
+  // Pinning it matters: Nitro otherwise auto-detects a host-specific preset
+  // from the build environment, which can silently switch the build to
+  // server-side rendering. `nuxt generate` then produces plain files that any
+  // static host will serve.
   nitro: {
     preset: 'static',
   },

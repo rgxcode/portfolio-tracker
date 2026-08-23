@@ -65,7 +65,7 @@ export async function resolveStockSymbols(log = console.log) {
 
 /** Yahoo: price plus the exchange timestamp that price belongs to. */
 async function fetchFromYahoo(symbol) {
-  if (!consume('yahoo')) throw new Error('daily yahoo budget exhausted')
+  if (!await consume('yahoo')) throw new Error('daily yahoo budget exhausted')
 
   const url = `${YAHOO_URL}/${encodeURIComponent(symbol)}?interval=1d&range=1d`
   const data = await getJson(url)
@@ -92,7 +92,7 @@ async function fetchFromYahoo(symbol) {
 /** Alpha Vantage fallback — only reached if Yahoo fails, and only while budget remains. */
 async function fetchFromAlphaVantage(symbol, apiKey) {
   if (!apiKey) throw new Error('no Alpha Vantage key configured')
-  if (!consume('alphavantage')) throw new Error('daily Alpha Vantage budget exhausted')
+  if (!await consume('alphavantage')) throw new Error('daily Alpha Vantage budget exhausted')
 
   const url = `${ALPHA_VANTAGE_URL}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`
   const data = await getJson(url)

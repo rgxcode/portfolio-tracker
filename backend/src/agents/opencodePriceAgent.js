@@ -17,19 +17,24 @@
  * trusting the output — strict extraction, sanity bounds, per-symbol retries
  * across models, and the previous good value kept whenever a run looks wrong.
  *
- * Writes data/opencode-prices.json — its own file, never prices.json.
+ * Writes the 'llm' snapshot in MongoDB — its own document, never the
+ * 'standard' one the scheduled job owns.
  */
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs'
 import { spawn } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
+import mongoose from 'mongoose'
 import { formatCET } from '../jobs/marketHours.js'
+import { saveSnapshot, loadSnapshot, LLM } from '../jobs/snapshotStore.js'
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = resolve(__dirname, '..', '..', 'data')
-const OUTPUT_FILE = resolve(DATA_DIR, 'opencode-prices.json')
+const MONGO_URL =
+  process.env.MONGODB_URI
+  || process.env.COSMOS_DB_CONNECTION_STRING // legacy name, kept so existing .env files keep working
+  || 'mongodb://127.0.0.1:27017/portfolio-tracker'
 
 /**
  * Free models, tried in order. If one is unavailable or returns garbage for a
@@ -260,22 +265,6 @@ async function lookupSymbol(symbol) {
   return { ok: false, attempts }
 }
 
-function readExisting() {
-  try {
-    return JSON.parse(readFileSync(OUTPUT_FILE, 'utf-8'))
-  } catch {
-    return null
-  }
-}
-
-/** Temp file + rename, so a reader never sees a partial write. */
-function writeAtomic(payload) {
-  mkdirSync(DATA_DIR, { recursive: true })
-  const tmp = `${OUTPUT_FILE}.tmp`
-  writeFileSync(tmp, JSON.stringify(payload, null, 2))
-  renameSync(tmp, OUTPUT_FILE)
-}
-
 let runCount = 0
 let errorCount = 0
 let consecutiveErrors = 0
@@ -283,7 +272,7 @@ let timer = null
 
 async function tick() {
   runCount++
-  const previous = readExisting()
+  const previous = await loadSnapshot(LLM)
   const prices = {}
   const failures = []
 
@@ -317,7 +306,7 @@ async function tick() {
   if (failures.length > 0) errorCount++
 
   const now = new Date().toISOString()
-  writeAtomic({
+  await saveSnapshot(LLM, {
     updatedAt: now,
     updatedAtCET: formatCET(now),
     baseCurrency: 'USD',
@@ -371,8 +360,16 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 log(
   runOnce
     ? `OpenCode price agent: single lookup of ${Object.keys(SOURCES).join(', ')} via ${MODELS[0]}`
-    : `OpenCode price agent: ${Object.keys(SOURCES).join(', ')} every ${INTERVAL_SEC}s → data/opencode-prices.json (free, Ctrl-C to stop)`,
+    : `OpenCode price agent: ${Object.keys(SOURCES).join(', ')} every ${INTERVAL_SEC}s → snapshot:llm (free, Ctrl-C to stop)`,
 )
+
+// One connection for the process, opened before the first tick.
+try {
+  await mongoose.connect(MONGO_URL, { serverSelectionTimeoutMS: 8000 })
+} catch (err) {
+  log(`Cannot reach the database (${err.message}) — nothing could be stored. Aborting.`)
+  process.exit(1)
+}
 
 loop().catch((err) => {
   log('Fatal:', err.message)

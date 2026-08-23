@@ -1,13 +1,6 @@
 import { Router } from 'express'
-import { readFile } from 'fs/promises'
-import { fileURLToPath } from 'url'
-import { dirname, resolve } from 'path'
 import PriceHistory from '../models/PriceHistory.js'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const PRICES_FILE = resolve(__dirname, '..', '..', 'data', 'prices.json')
-/** Written by the LLM agent (src/agents/opencodePriceAgent.js) — a second, independent view. */
-const LLM_PRICES_FILE = resolve(__dirname, '..', '..', 'data', 'opencode-prices.json')
+import { loadSnapshot, STANDARD, LLM } from '../jobs/snapshotStore.js'
 
 const router = Router()
 
@@ -22,11 +15,17 @@ router.use((_req, res, next) => {
 })
 
 /**
- * Reads prices.json fresh on each request. The file is tiny and rewritten
- * atomically by the fetch job, so there is nothing to cache or invalidate.
+ * Reads the snapshot fresh on each request. It is a single small document that
+ * the writers replace wholesale, so there is nothing to cache or invalidate.
  */
 async function readPrices() {
-  return JSON.parse(await readFile(PRICES_FILE, 'utf-8'))
+  const payload = await loadSnapshot(STANDARD)
+  if (!payload) {
+    const err = new Error('no snapshot')
+    err.code = 'ENOENT'
+    throw err
+  }
+  return payload
 }
 
 /** Minutes since a timestamp — lets clients spot a stalled job. */
@@ -64,8 +63,13 @@ router.get('/', async (_req, res, next) => {
 // Shaped like the main snapshot so the frontend can swap between them freely.
 router.get('/llm', async (_req, res, next) => {
   try {
-    const raw = await readFile(LLM_PRICES_FILE, 'utf-8')
-    const data = JSON.parse(raw)
+    const data = await loadSnapshot(LLM)
+    if (!data) {
+      return res.status(503).json({
+        error: 'No LLM price data yet — the agent has not run.',
+        hint: 'Run: node src/agents/opencodePriceAgent.js --once',
+      })
+    }
     res.json({
       ...data,
       ageMinutes: ageMinutes(data.updatedAt),
@@ -75,12 +79,6 @@ router.get('/llm', async (_req, res, next) => {
       stocks: {},
     })
   } catch (err) {
-    if (err.code === 'ENOENT') {
-      return res.status(503).json({
-        error: 'No LLM price data yet — the agent has not run.',
-        hint: 'Run: node src/agents/opencodePriceAgent.js --once',
-      })
-    }
     next(err)
   }
 })

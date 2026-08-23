@@ -38,7 +38,9 @@ try {
 } catch { /* keys are optional */ }
 
 const MONGO_URL =
-  process.env.COSMOS_DB_CONNECTION_STRING || 'mongodb://127.0.0.1:27017/portfolio-tracker'
+  process.env.MONGODB_URI
+  || process.env.COSMOS_DB_CONNECTION_STRING // legacy name, kept so existing .env files keep working
+  || 'mongodb://127.0.0.1:27017/portfolio-tracker'
 const CRYPTO_DAYS = 365
 const STOCK_RANGE = '5y'
 const STAGGER_MS = 2500 // CoinGecko's free tier allows ~30 calls/min

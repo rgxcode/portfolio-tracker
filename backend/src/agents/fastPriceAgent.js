@@ -60,7 +60,7 @@ async function getJson(url) {
 
 /** Both symbols in one request. Returns a map keyed by our own symbols. */
 async function fetchFromKraken() {
-  if (!consume('kraken')) throw new Error('daily kraken budget exhausted')
+  if (!await consume('kraken')) throw new Error('daily kraken budget exhausted')
 
   const pairs = Object.values(TRACKED).map(t => t.kraken).join(',')
   const data = await getJson(`${KRAKEN_URL}?pair=${pairs}`)
@@ -92,7 +92,7 @@ async function fetchFromKraken() {
 
 /** Fallback: one request per symbol, used only when Kraken fails. */
 async function fetchFromBinance(symbol) {
-  if (!consume('binance')) throw new Error('daily binance budget exhausted')
+  if (!await consume('binance')) throw new Error('daily binance budget exhausted')
 
   const meta = TRACKED[symbol]
   const t = await getJson(`${BINANCE_URL}?symbol=${meta.binance}`)

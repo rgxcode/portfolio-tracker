@@ -2,9 +2,12 @@
 /**
  * Scheduled price fetcher.
  *
- * Reads current prices once, from one place, and writes them to data/prices.json.
- * The app serves that file, so no browser ever talks to a third-party API and
- * rate limits stop being the app's problem.
+ * Reads current prices once, from one place, and stores them as the 'standard'
+ * snapshot in MongoDB. The API serves that snapshot, so no browser ever talks to
+ * a third-party API and rate limits stop being the app's problem.
+ *
+ * The snapshot lives in the database rather than on disk so the job and the API
+ * can run on different hosts — which is what a deployed setup requires.
  *
  * Cadence (launchd fires this every 5 minutes):
  *   crypto — every run, since crypto trades 24/7
@@ -14,11 +17,11 @@
  * Run manually:   node src/jobs/fetchPrices.js
  * Force stocks:   node src/jobs/fetchPrices.js --force-stocks
  *
- * On failure the existing prices.json is left untouched — stale data beats no
+ * On failure the previous snapshot is left untouched — stale data beats no
  * data, and the next run gets another chance.
  */
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs'
+import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import mongoose from 'mongoose'
@@ -26,11 +29,10 @@ import { COIN_IDS, COIN_NAMES, ID_TO_SYMBOL } from './coins.js'
 import { formatCET, isStockWindowOpen, stockWindowStatus } from './marketHours.js'
 import { resolveStockSymbols, fetchStockPrices } from './stocks.js'
 import { consume, usage } from './rateBudget.js'
+import { saveSnapshot, loadSnapshot, STANDARD } from './snapshotStore.js'
 import { recordSnapshot, pruneIntraday } from './history.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = resolve(__dirname, '..', '..', 'data')
-const OUTPUT_FILE = resolve(DATA_DIR, 'prices.json')
 
 /** Minimum gap between stock refreshes. 12h window ÷ 15min = 48 cycles/day. */
 const STOCK_INTERVAL_MIN = 15
@@ -54,7 +56,9 @@ const COINGECKO_URL = 'https://api.coingecko.com/api/v3/simple/price'
 const FX_URL = 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR'
 const TIMEOUT_MS = 20000
 const MONGO_URL =
-  process.env.COSMOS_DB_CONNECTION_STRING || 'mongodb://127.0.0.1:27017/portfolio-tracker'
+  process.env.MONGODB_URI
+  || process.env.COSMOS_DB_CONNECTION_STRING // legacy name, kept so existing .env files keep working
+  || 'mongodb://127.0.0.1:27017/portfolio-tracker'
 
 const forceStocks = process.argv.includes('--force-stocks')
 
@@ -78,7 +82,7 @@ async function getJson(url, headers = {}) {
 }
 
 async function fetchCryptoPrices() {
-  if (!consume('coingecko')) throw new Error('daily CoinGecko budget exhausted')
+  if (!await consume('coingecko')) throw new Error('daily CoinGecko budget exhausted')
 
   const ids = Object.values(COIN_IDS).join(',')
   const url = `${COINGECKO_URL}?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_last_updated_at=true`
@@ -120,22 +124,6 @@ async function fetchEurRate() {
   }
 }
 
-function readExisting() {
-  try {
-    return JSON.parse(readFileSync(OUTPUT_FILE, 'utf-8'))
-  } catch {
-    return null
-  }
-}
-
-/** Write via temp file + rename so a reader never sees a half-written file. */
-function writeAtomic(payload) {
-  mkdirSync(DATA_DIR, { recursive: true })
-  const tmp = `${OUTPUT_FILE}.tmp`
-  writeFileSync(tmp, JSON.stringify(payload, null, 2))
-  renameSync(tmp, OUTPUT_FILE)
-}
-
 /** Stocks are due if the window is open and enough time has passed. */
 function stocksAreDue(previous) {
   if (forceStocks) return true
@@ -146,16 +134,16 @@ function stocksAreDue(previous) {
 }
 
 async function main() {
-  const previous = readExisting()
-
-  // One connection for the whole run: symbol lookup and history writes.
-  let dbConnected = false
+  // The snapshot lives in the database now, so the connection has to come
+  // first — there is no local file to fall back on.
   try {
     await mongoose.connect(MONGO_URL, { serverSelectionTimeoutMS: 8000 })
-    dbConnected = true
   } catch (err) {
-    log(`Database unavailable (${err.message}) — prices.json still updates, history does not.`)
+    log(`Database unavailable (${err.message}) — cannot read or write the snapshot. Aborting.`)
+    process.exit(1)
   }
+  const dbConnected = true
+  const previous = await loadSnapshot(STANDARD)
 
   // ── Crypto: every run ───────────────────────────────────────────
   let crypto
@@ -166,7 +154,7 @@ async function main() {
     crypto = previous?.crypto ?? {}
   }
   if (Object.keys(crypto).length === 0) {
-    log('No crypto prices available — keeping previous file untouched.')
+    log('No crypto prices available — leaving the previous snapshot in place.')
     process.exit(1)
   }
 
@@ -200,7 +188,7 @@ async function main() {
   const eurRate = (await fetchEurRate()) ?? previous?.eurRate ?? 0.86
   const now = new Date().toISOString()
 
-  writeAtomic({
+  await saveSnapshot(STANDARD, {
     updatedAt: now,
     updatedAtCET: formatCET(now),
     baseCurrency: 'USD',
@@ -215,7 +203,7 @@ async function main() {
       hoursCET: '10:00–22:00',
       refreshEveryMin: STOCK_INTERVAL_MIN,
     },
-    rateBudget: usage(),
+    rateBudget: await usage(),
   })
 
   // ── History: append this snapshot so charts have a series to draw ──
@@ -225,7 +213,7 @@ async function main() {
       // Housekeeping is cheap and idempotent; once an hour is plenty.
       if (new Date().getMinutes() < 5) await pruneIntraday(log)
     } catch (err) {
-      log('History write failed (prices.json is still current):', err.message)
+      log('History write failed (the snapshot is still current):', err.message)
     }
     await mongoose.disconnect()
   }
@@ -233,7 +221,7 @@ async function main() {
   const btc = crypto.BTC ? `BTC $${crypto.BTC.price.toLocaleString()}` : 'BTC n/a'
   log(
     `Wrote ${Object.keys(crypto).length} crypto + ${Object.keys(stocks).length} stocks ` +
-      `(${btc}, EUR ${eurRate}) → prices.json`,
+      `(${btc}, EUR ${eurRate}) → snapshot:standard`,
   )
 }
 
