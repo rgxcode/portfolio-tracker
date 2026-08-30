@@ -50,8 +50,8 @@
            was simply wrong. -->
       <div v-else-if="!data.metricsAvailable" class="bg-gray-800/60 border border-gray-700 rounded-xl p-3 mb-6">
         <p class="text-gray-300 text-xs">
-          Valuation ratios (P/E, market cap) aren't loaded for {{ symbol }} yet — that provider
-          allows 25 requests a day. The statements below are complete and come from SEC filings.
+          Ratios aren't available for {{ symbol }} — that needs either filed financials to compute
+          from, or the metered provider, and neither is present.
         </p>
       </div>
 
@@ -249,7 +249,9 @@
 
       <p class="text-center text-xs text-gray-600 mt-6">
         {{ data.financialsSource === 'edgar' ? 'Statements as filed with the SEC (EDGAR)' : 'Statements from Alpha Vantage' }} ·
-        ratios from Alpha Vantage, stored {{ data.ageHours }}h ago
+        {{ data.metricsSource === 'computed'
+          ? 'ratios computed from those filings and the current price'
+          : `ratios from Alpha Vantage, stored ${data.ageHours}h ago` }}
         <button class="text-blue-400 hover:text-blue-300 ml-2" :disabled="refreshing" @click="forceRefresh">
           {{ refreshing ? 'refreshing…' : 'refresh now' }}
         </button>
@@ -375,7 +377,11 @@ const hasMetrics = computed(() =>
 const metricTiles = computed(() => {
   const m = data.value?.metrics ?? {}
   return [
-    { label: 'P/E', value: fmtNum(m.peRatio), hint: 'trailing' },
+    {
+      label: 'P/E',
+      value: fmtNum(m.peRatio),
+      hint: m.peRatio == null && (m.netIncomeTTM ?? 0) <= 0 ? 'not meaningful — loss' : 'trailing',
+    },
     { label: 'Forward P/E', value: fmtNum(m.forwardPE), hint: 'on estimates' },
     { label: 'PEG', value: fmtNum(m.pegRatio) },
     { label: 'EPS', value: m.eps != null ? `$${fmtNum(m.eps)}` : '—', hint: 'trailing 12m' },
@@ -384,7 +390,9 @@ const metricTiles = computed(() => {
     { label: 'Price / sales', value: fmtNum(m.priceToSales) },
     { label: 'EV / EBITDA', value: fmtNum(m.evToEbitda) },
     { label: 'Net margin', value: pct(m.profitMargin) },
+    { label: 'Gross margin', value: pct(m.grossMargin) },
     { label: 'Return on equity', value: pct(m.returnOnEquity) },
+    { label: 'Debt / equity', value: fmtNum(m.debtToEquity) },
     { label: 'Revenue TTM', value: big(m.revenueTTM) },
     { label: 'Beta', value: fmtNum(m.beta) },
   ]

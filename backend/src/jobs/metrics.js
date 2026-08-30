@@ -75,7 +75,16 @@ export function computeMetrics(quarters, price) {
   const shares = latest(quarters, 'sharesOutstanding')
   const equity = latest(quarters, 'equity')
   const assets = latest(quarters, 'assets')
-  const liabilities = latest(quarters, 'liabilities')
+
+  /**
+   * Many filers never tag `Liabilities` on its own — the balance sheet states
+   * assets and equity and leaves the reader to subtract. That is an identity,
+   * not an estimate, so falling back to it is exact rather than approximate.
+   */
+  const filedLiabilities = latest(quarters, 'liabilities')
+  const liabilities = filedLiabilities ?? (
+    assets != null && equity != null ? assets - equity : null
+  )
 
   const marketCap = price != null && shares != null ? price * shares : null
   const epsTTM = ratio(netIncomeTTM, shares)
