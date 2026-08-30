@@ -13,6 +13,7 @@
  *   node src/jobs/backfill.js              # held assets + tracked coins
  *   node src/jobs/backfill.js BTC ETH AMD  # only these symbols
  *   node src/jobs/backfill.js --sp500      # every S&P 500 member, no crypto
+ *   node src/jobs/backfill.js --crypto     # every tracked coin, no stocks
  *
  * --sp500 is a deliberate operator action, not automatic traffic: it makes ~500
  * requests over roughly ten minutes and is therefore paced by STOCK_STAGGER_MS
@@ -28,6 +29,8 @@ import { COIN_IDS } from './coins.js'
 import { formatCET } from './marketHours.js'
 import { resolveStockSymbols } from './stocks.js'
 import { refreshConstituents } from './sp500.js'
+import { refreshCoins, coinIdMap } from './coinlist.js'
+import Coin from '../models/Coin.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -82,9 +85,64 @@ async function store(symbol, type, points) {
   return res.upsertedCount ?? 0
 }
 
-async function backfillCrypto(symbol) {
-  const id = COIN_IDS[symbol]
-  if (!id) throw new Error(`unknown coin ${symbol}`)
+/** The provider's current price, used to sanity-check a history series. */
+async function coingeckoSpot(id) {
+  const apiKey = process.env.COINGECKO_API_KEY
+  const data = await getJson(
+    `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`,
+    apiKey ? { 'x-cg-demo-api-key': apiKey } : {},
+  )
+  return data?.[id]?.usd ?? null
+}
+
+/**
+ * Five years of daily closes for a coin, from Yahoo.
+ *
+ * Not CoinGecko: its free tier refuses any window beyond 365 days, so a year is
+ * all it will give. Yahoo carries five and costs nothing.
+ *
+ * The catch is that Yahoo's crypto tickers collide — SUI-USD returns a
+ * different, near-worthless token that stopped trading in 2024. So the series
+ * is only accepted when its final close is in the same ballpark as the
+ * provider's current price. A wrong asset is worse than a short one.
+ */
+async function backfillCryptoHistory(symbol, coingeckoId) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}-USD?interval=1d&range=${STOCK_RANGE}`
+  const data = await getJson(url)
+  const result = data?.chart?.result?.[0]
+  if (!result) throw new Error('no chart data')
+
+  const stamps = result.timestamp ?? []
+  const closes = result.indicators?.quote?.[0]?.close ?? []
+  const points = stamps
+    .map((s, i) => ({ ts: new Date(s * 1000), price: closes[i], source: 'yahoo-backfill' }))
+    .filter(p => typeof p.price === 'number')
+
+  if (points.length === 0) throw new Error('no usable closes')
+
+  const spot = coingeckoId ? await coingeckoSpot(coingeckoId) : null
+  if (spot != null && spot > 0) {
+    const last = points[points.length - 1].price
+    const ratio = last / spot
+    // An order of magnitude apart means Yahoo answered about something else.
+    if (ratio > 5 || ratio < 0.2) {
+      throw new Error(`ticker mismatch — Yahoo last ${last}, provider spot ${spot}`)
+    }
+  }
+
+  return store(symbol, 'crypto', points)
+}
+
+async function backfillCrypto(symbol, coinIds) {
+  const id = coinIds[symbol]
+
+  // Yahoo first: five years against CoinGecko's one.
+  try {
+    return await backfillCryptoHistory(symbol, id)
+  } catch (err) {
+    if (!id) throw err
+    log(`  ${symbol}: Yahoo history unusable (${err.message}) — falling back to 1y`)
+  }
 
   const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${CRYPTO_DAYS}`
   const apiKey = process.env.COINGECKO_API_KEY
@@ -121,11 +179,17 @@ async function main() {
 
   const args = process.argv.slice(2)
   const wantSp500 = args.includes('--sp500')
+  const wantCrypto = args.includes('--crypto')
   const requested = args.filter(a => !a.startsWith('--')).map(s => s.toUpperCase())
 
   let cryptoSymbols
   let stockSymbols
-  if (wantSp500) {
+  if (wantCrypto) {
+    // Refresh the rankings first so a coin that has risen into range is caught.
+    cryptoSymbols = await refreshCoins()
+    stockSymbols = []
+    log(`Crypto mode: ${cryptoSymbols.length} coins`)
+  } else if (wantSp500) {
     // Refresh membership first: backfilling a list that is months out of date
     // would quietly miss recent additions.
     stockSymbols = await refreshConstituents()
@@ -135,9 +199,12 @@ async function main() {
     cryptoSymbols = requested.filter(s => COIN_IDS[s])
     stockSymbols = requested.filter(s => !COIN_IDS[s])
   } else {
-    cryptoSymbols = Object.keys(COIN_IDS)
+    cryptoSymbols = Object.keys(await coinIdMap(COIN_IDS))
     stockSymbols = await resolveStockSymbols(log)
   }
+
+  // Symbol → provider id, for the sanity check on Yahoo's series.
+  const coinIds = await coinIdMap(COIN_IDS)
 
   log(`Backfilling ${cryptoSymbols.length} crypto (${CRYPTO_DAYS}d) + ${stockSymbols.length} stocks (${STOCK_RANGE})`)
 
@@ -145,9 +212,11 @@ async function main() {
   const failures = []
 
   for (const [i, symbol] of cryptoSymbols.entries()) {
-    if (i > 0) await delay(STAGGER_MS)
+    // Yahoo is the primary source now and tolerates a faster pace than
+    // CoinGecko's free tier, which is what STAGGER_MS was sized for.
+    if (i > 0) await delay(wantCrypto ? STOCK_STAGGER_MS : STAGGER_MS)
     try {
-      const n = await backfillCrypto(symbol)
+      const n = await backfillCrypto(symbol, coinIds)
       total += n
       log(`  ${symbol}: +${n} daily points`)
     } catch (err) {

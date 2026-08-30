@@ -1,4 +1,4 @@
-name: Backfill S&P 500 history
+name: Backfill market history
 
 # Seeds five years of daily closes for every S&P 500 member, and refreshes the
 # membership list with each company's GICS classification.
@@ -40,3 +40,10 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: node src/jobs/backfill.js --sp500
+
+      - name: Refresh the coin rankings and backfill crypto
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+        run: node src/jobs/backfill.js --crypto

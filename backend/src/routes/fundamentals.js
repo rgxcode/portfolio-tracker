@@ -5,6 +5,7 @@ import { loadSnapshot, STANDARD } from '../jobs/snapshotStore.js'
 import { loadFinancials } from '../jobs/edgar.js'
 import Constituent from '../models/Constituent.js'
 import PriceHistory from '../models/PriceHistory.js'
+import Coin from '../models/Coin.js'
 import { formatCET } from '../jobs/marketHours.js'
 import { computeMetrics, priceRange52w, PROVIDER_ONLY } from '../jobs/metrics.js'
 
@@ -142,20 +143,38 @@ router.get('/search', async (req, res, next) => {
     const starts = new RegExp('^' + safe, 'i')
     const contains = new RegExp(safe, 'i')
 
-    const [exact, byPrefix, byName] = await Promise.all([
+    // Crypto is searched alongside equities: the add-asset form uses this, and
+    // a lookup that only knew about shares was why adding a coin meant typing
+    // its name by hand and hoping the app recognised the ticker.
+    const [exact, byPrefix, byName, coinExact, coinPrefix, coinName] = await Promise.all([
       Constituent.find({ _id: q.toUpperCase() }, { name: 1, sector: 1 }).lean(),
       Constituent.find({ _id: starts }, { name: 1, sector: 1 }).limit(10).lean(),
       Constituent.find({ name: contains }, { name: 1, sector: 1 }).limit(10).lean(),
+      Coin.find({ _id: q.toUpperCase() }, { name: 1, rank: 1 }).lean(),
+      Coin.find({ _id: starts }, { name: 1, rank: 1 }).limit(10).lean(),
+      Coin.find({ name: contains }, { name: 1, rank: 1 }).limit(10).lean(),
     ])
 
-    // Ticker match first, then ticker prefix, then anywhere in the name — the
-    // order someone typing "NV" expects.
+    const shapeStock = d => ({ symbol: d._id, name: d.name, sector: d.sector, type: 'stock' })
+    const shapeCoin = d => ({ symbol: d._id, name: d.name, sector: 'Crypto', type: 'crypto' })
+
+    // Exact ticker matches first, then prefixes, then names — the order someone
+    // typing "NV" expects. Crypto interleaves at each tier rather than being
+    // relegated below every equity.
     const seen = new Set()
     const results = []
-    for (const doc of [...exact, ...byPrefix, ...byName]) {
-      if (seen.has(doc._id)) continue
-      seen.add(doc._id)
-      results.push({ symbol: doc._id, name: doc.name, sector: doc.sector })
+    const tiers = [
+      [...exact.map(shapeStock), ...coinExact.map(shapeCoin)],
+      [...byPrefix.map(shapeStock), ...coinPrefix.map(shapeCoin)],
+      [...byName.map(shapeStock), ...coinName.map(shapeCoin)],
+    ]
+    for (const tier of tiers) {
+      for (const doc of tier) {
+        if (seen.has(doc.symbol)) continue
+        seen.add(doc.symbol)
+        results.push(doc)
+        if (results.length >= 8) break
+      }
       if (results.length >= 8) break
     }
 

@@ -38,14 +38,39 @@
             {{ form.type === 'crypto' ? '(e.g. BTC, ETH, SOL)' : '(e.g. AAPL, TSLA, MSFT)' }}
           </span>
         </label>
-        <input
-          v-model="form.symbol"
-          type="text"
-          required
-          placeholder="BTC"
-          class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-          @input="form.symbol = (form.symbol as string).toUpperCase()"
-        />
+        <div class="relative">
+          <input
+            v-model="form.symbol"
+            type="text"
+            required
+            autocomplete="off"
+            placeholder="BTC"
+            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+            @input="onSymbolInput"
+            @blur="closeSuggestionsSoon"
+          />
+
+          <!-- Picking a suggestion fills the name and type, so neither has to be
+               typed and neither can disagree with the symbol. -->
+          <ul
+            v-if="suggestions.length"
+            class="absolute top-full left-0 right-0 mt-1 z-30 bg-gray-900 border border-gray-600 rounded-lg shadow-xl overflow-hidden"
+          >
+            <li
+              v-for="s in suggestions"
+              :key="s.symbol"
+              class="px-3 py-2 cursor-pointer flex items-baseline gap-2 hover:bg-gray-700"
+              @mousedown.prevent="applySuggestion(s)"
+            >
+              <span class="font-semibold text-white text-sm w-14 shrink-0">{{ s.symbol }}</span>
+              <span class="text-gray-300 text-sm truncate">{{ s.name }}</span>
+              <span
+                class="text-[10px] ml-auto shrink-0 px-1.5 py-0.5 rounded"
+                :class="s.type === 'crypto' ? 'bg-blue-900/60 text-blue-300' : 'bg-purple-900/60 text-purple-300'"
+              >{{ s.type }}</span>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <!-- Name -->
@@ -58,6 +83,7 @@
           placeholder="Bitcoin"
           class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
+        <p class="text-xs text-gray-500 mt-1">Filled in automatically when you pick a symbol above.</p>
       </div>
 
       <!-- Quantity & Purchase Price -->
@@ -160,5 +186,47 @@ async function handleSubmit() {
   form.purchasePrice = null
 
   emit('added')
+}
+
+// ── Symbol lookup ───────────────────────────────────────────────────
+/**
+ * The name and type used to be typed by hand, which meant a coin the app did
+ * not track looked identical to one it did — the entry saved, then never
+ * showed a price. Choosing from the lookup guarantees the symbol is one the
+ * price jobs actually know about.
+ */
+const { apiFetch } = useApi()
+const suggestions = ref<Array<{ symbol: string, name: string, type: string }>>([])
+let lookupTimer: ReturnType<typeof setTimeout> | null = null
+
+function onSymbolInput() {
+  form.symbol = String(form.symbol ?? '').toUpperCase()
+  if (lookupTimer) clearTimeout(lookupTimer)
+  lookupTimer = setTimeout(lookupSymbol, 150)
+}
+
+async function lookupSymbol() {
+  const q = String(form.symbol ?? '').trim()
+  if (q.length < 1) { suggestions.value = []; return }
+  try {
+    const res = await apiFetch<{ results: any[] }>(
+      `/api/fundamentals/search?q=${encodeURIComponent(q)}`,
+    )
+    suggestions.value = res.results ?? []
+  } catch {
+    // Typing a symbol by hand must still work if the lookup is unavailable.
+    suggestions.value = []
+  }
+}
+
+function applySuggestion(s: { symbol: string, name: string, type: string }) {
+  form.symbol = s.symbol
+  form.name = s.name
+  form.type = s.type
+  suggestions.value = []
+}
+
+function closeSuggestionsSoon() {
+  setTimeout(() => { suggestions.value = [] }, 120)
 }
 </script>

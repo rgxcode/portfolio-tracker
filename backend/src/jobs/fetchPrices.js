@@ -26,6 +26,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import mongoose from 'mongoose'
 import { COIN_IDS, COIN_NAMES, ID_TO_SYMBOL } from './coins.js'
+import Coin from '../models/Coin.js'
 import { formatCET, isStockWindowOpen, stockWindowStatus } from './marketHours.js'
 import { resolveStockSymbols, fetchStockPrices } from './stocks.js'
 import { consume, usage } from './rateBudget.js'
@@ -81,10 +82,49 @@ async function getJson(url, headers = {}) {
   }
 }
 
+/**
+ * The coins to price: the stored rankings, plus anything a user actually holds.
+ *
+ * The stored list is refreshed by the crypto backfill, so a coin that climbs
+ * into range appears without a code change. Held symbols are unioned in
+ * regardless of rank — someone holding a rank-200 coin should still see a
+ * price, which the old hardcoded top-30 could never do.
+ */
+async function resolveCoins() {
+  const [tracked, held] = await Promise.all([
+    Coin.find({}, { coingeckoId: 1, name: 1 }).lean(),
+    mongoose.connection.collection('assets').distinct('symbol', { type: 'crypto' }),
+  ])
+
+  const map = new Map(tracked.map(c => [c._id, { id: c.coingeckoId, name: c.name }]))
+
+  // Fall back to the static list when nothing is stored yet, so a fresh
+  // database still prices the majors rather than nothing at all.
+  if (map.size === 0) {
+    for (const [sym, id] of Object.entries(COIN_IDS)) {
+      map.set(sym, { id, name: COIN_NAMES[sym] ?? sym })
+    }
+  }
+
+  for (const raw of held) {
+    const sym = String(raw).toUpperCase()
+    if (map.has(sym)) continue
+    const known = await Coin.findById(sym).lean()
+    if (known) map.set(sym, { id: known.coingeckoId, name: known.name })
+    else if (COIN_IDS[sym]) map.set(sym, { id: COIN_IDS[sym], name: COIN_NAMES[sym] ?? sym })
+  }
+
+  return map
+}
+
 async function fetchCryptoPrices() {
   if (!await consume('coingecko')) throw new Error('daily CoinGecko budget exhausted')
 
-  const ids = Object.values(COIN_IDS).join(',')
+  const coins = await resolveCoins()
+  const idToSymbol = Object.fromEntries([...coins].map(([sym, c]) => [c.id, sym]))
+  const nameOf = Object.fromEntries([...coins].map(([sym, c]) => [sym, c.name]))
+
+  const ids = [...coins.values()].map(c => c.id).join(',')
   const url = `${COINGECKO_URL}?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_last_updated_at=true`
 
   const apiKey = process.env.COINGECKO_API_KEY || process.env.NUXT_PUBLIC_COINGECKO_API_KEY
@@ -92,7 +132,7 @@ async function fetchCryptoPrices() {
 
   const prices = {}
   for (const [id, values] of Object.entries(data)) {
-    const symbol = ID_TO_SYMBOL[id]
+    const symbol = idToSymbol[id] ?? ID_TO_SYMBOL[id]
     if (!symbol || typeof values?.usd !== 'number') continue
     // CoinGecko reports when it last saw this price; fall back to fetch time.
     const asOf = values.last_updated_at
@@ -100,7 +140,7 @@ async function fetchCryptoPrices() {
       : new Date().toISOString()
     prices[symbol] = {
       symbol,
-      name: COIN_NAMES[symbol] ?? symbol,
+      name: nameOf[symbol] ?? COIN_NAMES[symbol] ?? symbol,
       type: 'crypto',
       coingeckoId: id,
       price: values.usd,
