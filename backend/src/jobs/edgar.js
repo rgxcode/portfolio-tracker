@@ -65,10 +65,19 @@ const isYearLong = (start, end) => {
   return days >= 350 && days <= 380
 }
 
-/** Annual revenue by period end — the input for filling in a missing Q4. */
-function annualRevenue(facts) {
+/**
+ * Figures that can be filled in for a missing Q4 by subtraction.
+ *
+ * Only additive flows: a year's revenue really is its four quarters summed.
+ * EPS is deliberately absent — it is per share, and a changing share count
+ * makes the same arithmetic quietly wrong.
+ */
+const DERIVABLE = ['revenue', 'grossProfit', 'operatingIncome', 'netIncome', 'researchAndDevelopment']
+
+/** Annual totals for one metric by period end — the input for a missing Q4. */
+function annualFor(facts, names) {
   const out = new Map()
-  for (const name of CONCEPTS.revenue) {
+  for (const name of names) {
     const concept = facts[name]
     if (!concept) continue
     for (const unitFacts of Object.values(concept.units)) {
@@ -150,30 +159,54 @@ function mergedSeries(facts, names, kind) {
  * This is arithmetic on reported numbers, but it is not itself a filed figure,
  * so the rows are marked derived and the page says so.
  */
-function deriveFourthQuarters(quarterlyRevenue, annualRevenue) {
-  const filed = [...quarterlyRevenue.entries()]
-    .filter(([, q]) => q.start && q.val != null)
-    .map(([end, q]) => ({ end, start: q.start, val: q.val }))
-
+function deriveFourthQuarters(gaap, series) {
   const days = (a, b) => (new Date(b) - new Date(a)) / 86400e3
+
+  /** One metric's missing-quarter value inside a given annual window. */
+  const subtract = (quarterly, annual, end) => {
+    const filed = [...quarterly.entries()]
+      .filter(([, q]) => q.start && q.val != null)
+      .map(([e, q]) => ({ end: e, start: q.start, val: q.val }))
+
+    const inside = filed.filter(q => q.start >= annual.start && q.end <= end)
+    if (inside.length !== 3) return null
+
+    // Three quarters should cover roughly nine months; anything else means the
+    // window caught the wrong periods.
+    const covered = inside.reduce((n, q) => n + days(q.start, q.end), 0)
+    if (covered < 250 || covered > 290) return null
+
+    return annual.val - inside.reduce((n, q) => n + q.val, 0)
+  }
+
+  // Revenue decides which quarters exist at all — a year with no annual revenue
+  // is not one we can complete.
+  const annualRevenue = annualFor(gaap, CONCEPTS.revenue)
   const added = []
 
   for (const [end, annual] of annualRevenue) {
-    if (quarterlyRevenue.has(end)) continue // the company filed this quarter
+    if (series.revenue.has(end)) continue // the company filed this quarter
     if (!annual.start || annual.val == null) continue
 
-    const inside = filed.filter(q => q.start >= annual.start && q.end <= end)
-    if (inside.length !== 3) continue
-
-    // Three quarters should cover roughly nine months of the year; anything
-    // else means the window caught the wrong periods.
-    const covered = inside.reduce((n, q) => n + days(q.start, q.end), 0)
-    if (covered < 250 || covered > 290) continue
-
-    const revenue = annual.val - inside.reduce((n, q) => n + q.val, 0)
+    const revenue = subtract(series.revenue, annual, end)
     if (!(revenue > 0)) continue
 
-    added.push({ end, fp: 'Q4', form: annual.form, revenue, derived: true })
+    const row = { end, fp: 'Q4', form: annual.form, revenue, derived: true }
+
+    // Every other additive figure gets the same treatment, each against its own
+    // annual total. Deriving only revenue left net income and margin with a
+    // hole at every fourth quarter.
+    for (const metric of DERIVABLE) {
+      if (metric === 'revenue') continue
+      const annuals = annualFor(gaap, CONCEPTS[metric])
+      const yearly = annuals.get(end)
+      if (!yearly?.start || yearly.val == null) continue
+      const value = subtract(series[metric], yearly, end)
+      // Losses are real, so only an absent result is skipped — not a negative.
+      if (value != null && Number.isFinite(value)) row[metric] = value
+    }
+
+    added.push(row)
   }
   return added
 }
@@ -209,7 +242,7 @@ export function buildQuarters(companyFacts) {
   // A row with no income-statement figure at all is noise from a stray tag.
   const filed = quarters.filter(q => q.revenue != null || q.netIncome != null)
 
-  const derived = deriveFourthQuarters(series.revenue, annualRevenue(gaap))
+  const derived = deriveFourthQuarters(gaap, series)
   if (derived.length === 0) return filed
 
   // Derived rows still get whatever balance-sheet position was filed for that
