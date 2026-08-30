@@ -23,6 +23,25 @@ function cutoffFor(period) {
   return new Date(Date.now() - days * 86400e3)
 }
 
+/**
+ * The calendar quarter a fiscal quarter belongs to.
+ *
+ * Companies close their books on different days: for the same business quarter
+ * AMD ends 27 June, Tesla 30 June and NVIDIA 26 July. Grouping on the exact end
+ * date puts each company in its own bucket, so a comparison chart showed one
+ * bar per slot and looked like missing data.
+ *
+ * Shifting back six weeks before taking the calendar quarter absorbs that
+ * spread — a period ending in late July is the quarter that ended in June —
+ * while still separating genuinely different quarters.
+ */
+function calendarQuarter(end) {
+  const d = new Date(end)
+  if (Number.isNaN(d.getTime())) return null
+  d.setDate(d.getDate() - 45)
+  return `${d.getUTCFullYear()} Q${Math.floor(d.getUTCMonth() / 3) + 1}`
+}
+
 /** Thin a series so several of them together stay a reasonable payload. */
 function downsample(points, max = 220) {
   if (points.length <= max) return points
@@ -77,6 +96,8 @@ router.get('/', async (req, res, next) => {
         .slice(0, MAX_QUARTERS)
         .map(q => ({
           end: q.end,
+          // The shared bucket clients group on, so every company's Q2 lines up.
+          period: calendarQuarter(q.end),
           revenue: q.revenue ?? null,
           netIncome: q.netIncome ?? null,
           // Margin is derived here so every client shows the same number.

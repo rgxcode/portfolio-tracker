@@ -93,7 +93,12 @@
         />
       </div>
 
-      <p v-if="missing.length" class="text-xs text-gray-500 mt-4">
+      <p class="text-xs text-gray-500 mt-4">
+        Quarters are grouped by calendar quarter: companies close their books on different
+        days, so AMD's Q2 ending 27 June and NVIDIA's ending 26 July are the same period.
+        A gap means that company had not reported that quarter.
+      </p>
+      <p v-if="missing.length" class="text-xs text-gray-500 mt-1">
         No financial statements stored for {{ missing.join(', ') }} — those come from SEC filings and
         cover S&P 500 members.
       </p>
@@ -195,12 +200,6 @@ function big(n: number | null | undefined) {
   return `${sign}$${a.toFixed(0)}`
 }
 
-const quarterLabel = (d: string) => {
-  const [y, m] = d.split('-')
-  const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(m) - 1]
-  return `${mon} '${y.slice(2)}`
-}
-
 function frame(fmt: (v: number) => string) {
   return {
     responsive: true,
@@ -229,20 +228,30 @@ function frame(fmt: (v: number) => string) {
 const BAR = { borderRadius: 4, borderSkipped: false as const, barPercentage: 0.74, categoryPercentage: 0.8 }
 const key = computed(() => series.value.map((s, i) => ({ label: s.symbol, color: PALETTE[i % PALETTE.length] })))
 
-/** Quarter labels shared by every company, so the bars line up. */
+/**
+ * The shared axis: calendar quarters, not raw period-end dates.
+ *
+ * Fiscal calendars differ — the same business quarter ends 27 June for AMD and
+ * 26 July for NVIDIA — so grouping on the end date gave every company its own
+ * slots and one bar per column, which read as missing data. The server buckets
+ * each quarter and sends the label; this just aligns on it.
+ */
 const quarterAxis = computed(() => {
   const all = new Set<string>()
-  for (const s of series.value) for (const q of s.quarters ?? []) all.add(q.end)
+  for (const s of series.value) {
+    for (const q of s.quarters ?? []) if (q.period) all.add(q.period)
+  }
+  // "2026 Q2" sorts chronologically as text.
   return [...all].sort().slice(-12)
 })
 
 function quarterData(field: string) {
   return {
-    labels: quarterAxis.value.map(quarterLabel),
+    labels: quarterAxis.value,
     datasets: series.value.map((s, i) => ({
       label: s.symbol,
-      data: quarterAxis.value.map(end => {
-        const q = (s.quarters ?? []).find((x: any) => x.end === end)
+      data: quarterAxis.value.map((period) => {
+        const q = (s.quarters ?? []).find((x: any) => x.period === period)
         const v = q?.[field]
         return v == null ? null : (field === 'margin' ? v * 100 : v / 1e9)
       }),
