@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import PriceHistory from '../models/PriceHistory.js'
 import { loadSnapshot, STANDARD, LLM } from '../jobs/snapshotStore.js'
-import { refreshIfStale } from '../agents/llmRefresher.js'
+import { refreshIfStale, refresherStatus } from '../agents/llmRefresher.js'
 
 const router = Router()
 
@@ -57,6 +57,12 @@ router.get('/', async (_req, res, next) => {
   } catch (err) {
     handleReadError(err, res, next)
   }
+})
+
+// GET /api/prices/llm/status — why the LLM snapshot is or isn't moving.
+// Declared before /llm and /:symbol so neither swallows it.
+router.get('/llm/status', (_req, res) => {
+  res.json(refresherStatus())
 })
 
 // GET /api/prices/llm — the LLM agent's view, read off web pages.

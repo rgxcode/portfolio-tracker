@@ -14,6 +14,8 @@
  */
 
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
+import { totalmem } from 'os'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { formatCET } from '../jobs/marketHours.js'
@@ -37,6 +39,19 @@ const RUN_TIMEOUT_MS = 90_000
 
 let inFlight = false
 let cooldownUntil = 0
+
+/**
+ * Last-run state, exposed over HTTP. The deployed host's logs are not reachable
+ * from here, so without this a silent failure is indistinguishable from the
+ * refresh never being attempted at all.
+ */
+const state = {
+  attempts: 0,
+  lastOutcome: null,
+  lastError: null,
+  lastStartedAt: null,
+  lastDurationSec: null,
+}
 
 const log = (...a) => console.log(`[${formatCET()}] llm-refresh:`, ...a)
 
@@ -67,6 +82,9 @@ export function refreshIfStale(snapshot) {
 
   inFlight = true
   const startedAt = Date.now()
+  state.attempts += 1
+  state.lastStartedAt = new Date(startedAt).toISOString()
+  state.lastOutcome = 'running'
 
   const child = spawn(process.execPath, [AGENT, '--once'], {
     cwd: BACKEND_DIR,
@@ -86,11 +104,15 @@ export function refreshIfStale(snapshot) {
     clearTimeout(timer)
     inFlight = false
     const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
+    state.lastOutcome = label
+    state.lastDurationSec = Number(secs)
     if (label === 'ok') {
+      state.lastError = null
       log(`refreshed in ${secs}s`)
     } else {
+      state.lastError = stderr.trim().split('\n').slice(-3).join(' | ').slice(0, 500) || null
       cooldownUntil = Date.now() + FAILURE_COOLDOWN_MS
-      log(`${label} after ${secs}s — pausing ${FAILURE_COOLDOWN_MS / 1000}s. ${stderr.trim().split('\n')[0] ?? ''}`)
+      log(`${label} after ${secs}s — pausing ${FAILURE_COOLDOWN_MS / 1000}s. ${state.lastError ?? ''}`)
     }
   }
 
@@ -98,4 +120,21 @@ export function refreshIfStale(snapshot) {
   child.on('error', err => finish(`could not start (${err.message})`))
 
   return true
+}
+
+/** What the server can see about its own ability to run the agent. */
+export function refresherStatus() {
+  const binary = resolve(BACKEND_DIR, 'node_modules', '.bin', 'opencode')
+  return {
+    ...state,
+    inFlight,
+    staleAfterSec: STALE_SEC,
+    cooldownRemainingSec: Math.max(0, Math.round((cooldownUntil - Date.now()) / 1000)),
+    opencodeBinary: binary,
+    opencodeInstalled: existsSync(binary),
+    agentScript: AGENT,
+    agentScriptExists: existsSync(AGENT),
+    node: process.version,
+    memoryLimitHintMB: Math.round(totalmem() / 1024 / 1024),
+  }
 }
