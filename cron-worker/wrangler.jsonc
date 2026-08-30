@@ -1,0 +1,16 @@
+{
+  // A clock, nothing more: every 5 minutes it asks GitHub to run the price
+  // workflows. Kept as its own Worker so it cannot affect the frontend deploy.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "portfolio-cron",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-30",
+  "triggers": {
+    // Cloudflare honours this interval; GitHub's own scheduler does not.
+    "crons": ["*/5 * * * *"]
+  },
+  "observability": {
+    // Keeps the dispatch results visible in `wrangler tail`.
+    "enabled": true
+  }
+}
