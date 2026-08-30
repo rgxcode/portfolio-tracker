@@ -4,6 +4,8 @@ import { refreshFundamentals, loadFundamentals } from '../jobs/fundamentals.js'
 import { loadSnapshot, STANDARD } from '../jobs/snapshotStore.js'
 import { loadFinancials } from '../jobs/edgar.js'
 import Constituent from '../models/Constituent.js'
+import PriceHistory from '../models/PriceHistory.js'
+import { formatCET } from '../jobs/marketHours.js'
 import { computeMetrics, priceRange52w, PROVIDER_ONLY } from '../jobs/metrics.js'
 
 const router = Router()
@@ -89,12 +91,37 @@ function fromEdgar(quarters) {
   }
 }
 
-/** The live price for this ticker, so the page can show it without a second call. */
+/**
+ * The current price for this ticker, so the page can show it without a second
+ * call — and so market cap and every price-based ratio can be computed.
+ *
+ * The live snapshot only covers held assets, because refreshing all 500 members
+ * every five minutes would be six figures of requests a day. For everything else
+ * the most recent stored close is the right answer: it is a real observed price,
+ * just not a live one, and without it market cap came back empty for every
+ * company nobody happened to own.
+ */
 async function currentQuote(symbol) {
-  const snap = await loadSnapshot(STANDARD)
-  if (!snap) return null
   const s = symbol.toUpperCase()
-  return snap.stocks?.[s] ?? snap.crypto?.[s] ?? null
+
+  const snap = await loadSnapshot(STANDARD)
+  const live = snap?.stocks?.[s] ?? snap?.crypto?.[s] ?? null
+  if (live) return live
+
+  const last = await PriceHistory.findOne({ symbol: s }, { _id: 0, ts: 1, price: 1 })
+    .sort({ ts: -1 })
+    .lean()
+  if (!last) return null
+
+  return {
+    symbol: s,
+    price: last.price,
+    asOf: last.ts,
+    asOfCET: formatCET(last.ts),
+    // Said plainly rather than dressed up as a live quote.
+    source: 'last-stored-close',
+    stale: true,
+  }
 }
 
 /**
