@@ -27,6 +27,12 @@ router.use((_req, res, next) => {
 const TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 /**
+ * A partial record (financials unavailable, usually the daily quota) is retried
+ * far sooner — it is a temporary gap, not a week-old truth.
+ */
+const PARTIAL_TTL_MS = 30 * 60 * 1000
+
+/**
  * Symbols currently being fetched. A first view takes several seconds, and
  * without this a page that fires two requests, or an impatient reload, would
  * spend the budget twice on the same ticker.
@@ -60,6 +66,7 @@ router.get('/:symbol', async (req, res, next) => {
 
     let doc = await loadFundamentals(symbol)
     const age = doc ? Date.now() - new Date(doc.fetchedAt).getTime() : Infinity
+    const ttl = doc?.partial ? PARTIAL_TTL_MS : TTL_MS
 
     if (!doc) {
       // Nothing stored: the caller has to wait, since there is nothing to show.
@@ -67,12 +74,15 @@ router.get('/:symbol', async (req, res, next) => {
         await refreshOnce(symbol)
         doc = await loadFundamentals(symbol)
       } catch (err) {
-        return res.status(502).json({
-          error: 'Could not load fundamentals for this symbol.',
+        // Only reached when even the keyless sources failed, so there is
+        // genuinely nothing to render. 503 rather than 502: the upstream is
+        // rate-limiting us, and it will work again later.
+        return res.status(503).json({
+          error: 'Could not load anything for this symbol right now.',
           detail: err.message,
         })
       }
-    } else if (age > TTL_MS) {
+    } else if (age > ttl) {
       // Stale but usable: answer immediately and refresh behind the response,
       // so a quarterly update never makes someone wait.
       refreshOnce(symbol).catch(err => console.error('fundamentals refresh:', err.message))

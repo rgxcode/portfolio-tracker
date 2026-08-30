@@ -43,6 +43,19 @@
     </div>
 
     <template v-if="data">
+      <!-- Financials missing: say what is missing and why, and still show the rest -->
+      <div v-if="data.partial" class="bg-amber-900/25 border border-amber-700/60 rounded-xl p-4 mb-6">
+        <p class="text-amber-200 text-sm font-medium">Financial statements aren't available for {{ symbol }} yet.</p>
+        <p class="text-amber-300/70 text-xs mt-1">
+          The fundamentals provider allows 25 requests a day and a full company costs four of them.
+          Price and related tickers below come from other sources and are unaffected. This retries
+          automatically — reload in a few minutes, or after midnight CET if the daily limit is spent.
+        </p>
+        <p v-if="data.unavailableReason" class="text-amber-400/50 text-[11px] mt-2 font-mono break-all">
+          {{ truncate(data.unavailableReason, 180) }}
+        </p>
+      </div>
+
       <!-- Identity + price -->
       <section class="bg-gray-800 border border-gray-700 rounded-2xl p-5 mb-6">
         <div class="flex flex-wrap gap-x-8 gap-y-3 items-baseline">
@@ -76,7 +89,7 @@
       </section>
 
       <!-- Valuation -->
-      <section class="mb-6">
+      <section v-if="hasMetrics" class="mb-6">
         <h2 class="font-semibold text-white mb-3">Valuation &amp; ratios</h2>
         <div class="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
           <div v-for="m in metricTiles" :key="m.label" class="bg-gray-800 border border-gray-700 rounded-xl p-3">
@@ -316,6 +329,11 @@ function iconColor(sym: string) {
 }
 
 const range52 = computed(() => data.value?.metrics?.week52High != null)
+
+/** Nothing numeric came back, so the ratio grid would be twelve dashes. */
+const hasMetrics = computed(() =>
+  Object.values(data.value?.metrics ?? {}).some(v => v != null),
+)
 
 const metricTiles = computed(() => {
   const m = data.value?.metrics ?? {}

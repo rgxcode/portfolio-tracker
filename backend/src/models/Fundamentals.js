@@ -39,6 +39,13 @@ const fundamentalsSchema = new mongoose.Schema(
     /** Which upstreams actually answered, so a partial refresh is visible. */
     sources: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
 
+    /**
+     * True when the metered provider could not be reached, so the record holds
+     * only what free sources gave. Short-lived — see the TTL in the route.
+     */
+    partial: { type: Boolean, default: false },
+    unavailableReason: String,
+
     fetchedAt: { type: Date, required: true },
   },
   { minimize: false, versionKey: false },

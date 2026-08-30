@@ -39,18 +39,32 @@ function num(value) {
  * would cache an empty record for days.
  */
 async function alphaVantage(fn, symbol, key) {
-  if (!(await consume('alphavantage'))) {
-    throw new Error('daily Alpha Vantage budget exhausted')
+  const url = `${AV}?function=${fn}&symbol=${encodeURIComponent(symbol)}&apikey=${key}`
+  let lastNotice = null
+
+  // The free tier throttles short bursts and says so in a 200 response. That is
+  // temporary and clears within seconds, unlike the daily quota, which repeats
+  // the same message all day — so retry a couple of times with a widening gap
+  // and give up rather than hammering it.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!(await consume('alphavantage'))) {
+      throw new Error('daily Alpha Vantage budget exhausted')
+    }
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) })
+    if (!res.ok) throw new Error(`${fn}: HTTP ${res.status}`)
+
+    const body = await res.json()
+    const notice = body.Information ?? body.Note ?? body['Error Message']
+    if (!notice) return body
+
+    lastNotice = String(notice)
+    // A daily-limit notice will not clear by waiting, so stop immediately.
+    if (/\b25 requests per day\b|rate limit is 25/i.test(lastNotice)) break
+    await sleep(SPACING_MS * (attempt + 2))
   }
 
-  const url = `${AV}?function=${fn}&symbol=${encodeURIComponent(symbol)}&apikey=${key}`
-  const res = await fetch(url, { signal: AbortSignal.timeout(20000) })
-  if (!res.ok) throw new Error(`${fn}: HTTP ${res.status}`)
-
-  const body = await res.json()
-  const notice = body.Information ?? body.Note ?? body['Error Message']
-  if (notice) throw new Error(`${fn}: ${String(notice).slice(0, 120)}`)
-  return body
+  throw new Error(`${fn}: ${lastNotice.slice(0, 120)}`)
 }
 
 /** Balance-sheet lines worth showing, in the order they are presented. */
@@ -129,6 +143,17 @@ export async function refreshFundamentals(symbol) {
   const sources = {}
   const doc = { _id: ticker, fetchedAt: new Date() }
 
+  // Peers first, deliberately. Yahoo needs no key and no quota, so when the
+  // metered provider is exhausted this still gives the page something real to
+  // show rather than an error and nothing else.
+  try {
+    doc.peers = await fetchPeers(ticker)
+    sources.peers = 'ok'
+  } catch (err) {
+    doc.peers = []
+    sources.peers = err.message
+  }
+
   try {
     const o = await alphaVantage('OVERVIEW', ticker, key)
     if (!o.Symbol) throw new Error('OVERVIEW: unknown symbol')
@@ -196,23 +221,19 @@ export async function refreshFundamentals(symbol) {
     sources.earnings = err.message
   }
 
-  try {
-    doc.peers = await fetchPeers(ticker)
-    sources.peers = 'ok'
-  } catch (err) {
-    sources.peers = err.message
-  }
-
   doc.sources = sources
 
-  // Nothing usable means an unknown ticker or an exhausted budget. Storing that
-  // would cache a blank page for days, so leave whatever is already there.
-  if (sources.overview !== 'ok' && !doc.balanceSheetQuarterly?.length) {
-    throw new Error(`no data for ${ticker}: ${sources.overview}`)
-  }
+  /**
+   * A record with no financials is still worth keeping: it carries the peer
+   * links and lets the page explain itself. It is marked partial and given a
+   * short life so the next visit retries, instead of caching an empty company
+   * for the full week a complete record earns.
+   */
+  doc.partial = sources.overview !== 'ok' && !doc.balanceSheetQuarterly?.length
+  if (doc.partial) doc.unavailableReason = sources.overview
 
   await Fundamentals.findByIdAndUpdate(ticker, doc, { upsert: true, new: true })
-  log(`${ticker}: ${Object.entries(sources).map(([k, v]) => `${k}=${v === 'ok' ? 'ok' : 'fail'}`).join(' ')}`)
+  log(`${ticker}${doc.partial ? ' (partial)' : ''}: ${Object.entries(sources).map(([k, v]) => `${k}=${v === 'ok' ? 'ok' : 'fail'}`).join(' ')}`)
   return doc
 }
 
