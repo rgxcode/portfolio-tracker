@@ -22,7 +22,7 @@
  */
 
 import { spawn } from 'child_process'
-import { mkdirSync } from 'fs'
+import { mkdirSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import mongoose from 'mongoose'
@@ -40,6 +40,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
  */
 const DATA_DIR = resolve(__dirname, '..', '..', 'data')
 mkdirSync(DATA_DIR, { recursive: true })
+
+/**
+ * Prefer the copy installed as a project dependency over whatever PATH offers.
+ *
+ * Relying on a bare `opencode` only works where someone installed it globally —
+ * true on the machine this was written on, false in CI and on a deployed host,
+ * where it failed as ENOENT. Resolving the dependency makes every environment
+ * behave the same, and falling back to PATH keeps a global install working.
+ */
+const OPENCODE_BIN = (() => {
+  const local = resolve(__dirname, '..', '..', 'node_modules', '.bin', 'opencode')
+  return existsSync(local) ? local : 'opencode'
+})()
 const MONGO_URL =
   process.env.MONGODB_URI
   || process.env.COSMOS_DB_CONNECTION_STRING // legacy name, kept so existing .env files keep working
@@ -199,7 +212,7 @@ function validate(symbol, parsed) {
  */
 function askModel(model, text) {
   return new Promise((resolve, reject) => {
-    const child = spawn('opencode', ['run', '-m', model, text], {
+    const child = spawn(OPENCODE_BIN, ['run', '-m', model, text], {
       cwd: DATA_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
