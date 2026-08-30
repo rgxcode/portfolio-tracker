@@ -225,6 +225,44 @@ function frame(fmt: (v: number) => string) {
   }
 }
 
+/**
+ * Like `frame`, but with an x axis proportional to time. Used for the price
+ * line; the quarterly bars keep a category axis, which is right for discrete
+ * periods that genuinely are evenly spaced.
+ */
+function timeFrame(fmt: (v: number) => string) {
+  const base = frame(fmt)
+  return {
+    ...base,
+    scales: {
+      ...base.scales,
+      x: {
+        type: 'linear' as const,
+        bounds: 'data' as const,
+        grid: { display: false },
+        ticks: {
+          color: INK, font: { size: 10 }, maxTicksLimit: 7, maxRotation: 0, autoSkip: true,
+          callback: (v: any) => new Date(Number(v)).toLocaleDateString('en-GB', {
+            month: 'short', year: '2-digit',
+          }),
+        },
+      },
+    },
+    plugins: {
+      ...base.plugins,
+      tooltip: {
+        ...base.plugins.tooltip,
+        callbacks: {
+          ...base.plugins.tooltip.callbacks,
+          title: (items: any[]) => new Date(items[0].parsed.x).toLocaleDateString('en-GB', {
+            day: 'numeric', month: 'short', year: 'numeric',
+          }),
+        },
+      },
+    },
+  }
+}
+
 const BAR = { borderRadius: 4, borderSkipped: false as const, barPercentage: 0.74, categoryPercentage: 0.8 }
 const key = computed(() => series.value.map((s, i) => ({ label: s.symbol, color: PALETTE[i % PALETTE.length] })))
 
@@ -271,7 +309,12 @@ const charts = computed(() => {
     // Indexed, not absolute: a $470 share and a $217 one on one axis compares
     // price tags, not performance. Rebasing to 100 makes growth comparable and
     // keeps a single scale rather than a second axis.
-    const stamps = [...new Set(withPrices.flatMap(s => s.points.map((p: any) => p.t)))].sort((a, b) => a - b)
+    /**
+     * Each series carries its own x values rather than being aligned by index
+     * into a shared list of stamps. Two companies rarely have prices on exactly
+     * the same instants, and an index-based axis both spaced them unevenly in
+     * time and silently misaligned them against each other.
+     */
     out.push({
       title: 'Share price growth',
       subtitle: `Indexed to 100 at the start of the ${period.value} window`,
@@ -279,19 +322,18 @@ const charts = computed(() => {
       series: key.value.filter(k => withPrices.some(s => s.symbol === k.label)),
       caption: 'portfolio-tracker · prices as stored',
       data: {
-        labels: stamps.map(t => new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })),
         datasets: withPrices.map((s) => {
-          const idx = new Map(s.points.map((p: any) => [p.t, p.indexed]))
+          const colour = PALETTE[series.value.findIndex(x => x.symbol === s.symbol) % PALETTE.length]
           return {
             label: s.symbol,
-            data: stamps.map(t => idx.get(t) ?? null),
-            borderColor: PALETTE[series.value.findIndex(x => x.symbol === s.symbol) % PALETTE.length],
-            backgroundColor: PALETTE[series.value.findIndex(x => x.symbol === s.symbol) % PALETTE.length],
+            data: s.points.map((p: any) => ({ x: p.t, y: p.indexed })),
+            borderColor: colour,
+            backgroundColor: colour,
             borderWidth: 2, pointRadius: 0, pointHitRadius: 8, tension: 0.2, spanGaps: true,
           }
         }),
       },
-      options: frame((v: number) => v.toFixed(0)),
+      options: timeFrame((v: number) => v.toFixed(0)),
     })
   }
 

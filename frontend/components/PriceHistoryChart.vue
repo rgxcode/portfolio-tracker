@@ -105,11 +105,28 @@ function fmt(v: number) {
 
 const rising = computed(() => (stats.value?.change ?? 0) >= 0)
 
+/** Short over days, month-and-year over years — the span decides the format. */
+function tickLabel(ms: number) {
+  const span = points.value.length
+    ? points.value[points.value.length - 1].timestamp - points.value[0].timestamp
+    : 0
+  const d = new Date(ms)
+  if (span > 400 * 86400e3) return d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })
+  if (span > 60 * 86400e3) return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+/**
+ * Points carry their own x value, so the axis is proportional to time.
+ *
+ * With a category axis Chart.js spaces points by index, which is only honest
+ * when samples are evenly spaced in time. They are not: the series is thinned
+ * for display, and markets close at weekends, so equal steps across the axis
+ * covered unequal spans and the tick dates came out irregular.
+ */
 const chartData = computed(() => ({
-  labels: points.value.map(p =>
-    new Date(p.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })),
   datasets: [{
-    data: points.value.map(p => p.price),
+    data: points.value.map(p => ({ x: p.timestamp, y: p.price })),
     borderColor: rising.value ? '#199e70' : '#e66767',
     backgroundColor: rising.value ? 'rgba(25,158,112,0.12)' : 'rgba(230,103,103,0.12)',
     borderWidth: 2,
@@ -130,13 +147,29 @@ const chartOptions = computed(() => ({
     tooltip: {
       backgroundColor: '#111827', borderColor: '#374151', borderWidth: 1, padding: 10,
       titleColor: '#f3f4f6', bodyColor: '#d1d5db',
-      callbacks: { label: (c: any) => ` $${fmt(c.parsed.y)}` },
+      callbacks: {
+        title: (items: any[]) => new Date(items[0].parsed.x).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'short', year: 'numeric',
+        }),
+        label: (c: any) => ` $${fmt(c.parsed.y)}`,
+      },
     },
   },
   scales: {
     x: {
+      // Linear over epoch milliseconds: true time spacing without pulling in a
+      // date adapter for the sake of one axis.
+      type: 'linear' as const,
+      bounds: 'data' as const,
       grid: { display: false },
-      ticks: { color: '#9ca3af', font: { size: 10 }, maxTicksLimit: 7, maxRotation: 0 },
+      ticks: {
+        color: '#9ca3af',
+        font: { size: 10 },
+        maxTicksLimit: 7,
+        maxRotation: 0,
+        autoSkip: true,
+        callback: (v: any) => tickLabel(Number(v)),
+      },
     },
     y: {
       grid: { color: 'rgba(148,163,184,0.12)', drawTicks: false },
