@@ -55,6 +55,7 @@ export function useMarketData() {
     eurRate: number
     crypto: Record<string, Quote>
     stocks: Record<string, Quote>
+    commodities?: Record<string, Quote>
     stocksUpdatedAtCET: string | null
     stocksAgeMinutes: number | null
     stockWindow: { open: boolean, status: string, hoursCET: string }
@@ -124,7 +125,11 @@ export function useMarketData() {
     }
 
     for (const asset of store.assets) {
-      const bucket = asset.type === 'crypto' ? data.crypto : data.stocks
+      const bucket = asset.type === 'crypto'
+        ? data.crypto
+        : asset.type === 'commodity'
+          ? data.commodities
+          : data.stocks
       const quote = bucket?.[asset.symbol.toUpperCase()]
       if (!quote) continue
 

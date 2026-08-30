@@ -27,6 +27,7 @@ import { dirname, resolve } from 'path'
 import mongoose from 'mongoose'
 import { COIN_IDS, COIN_NAMES, ID_TO_SYMBOL } from './coins.js'
 import Coin from '../models/Coin.js'
+import { fetchCommodityPrices } from './commodities.js'
 import { formatCET, isStockWindowOpen, stockWindowStatus } from './marketHours.js'
 import { resolveStockSymbols, fetchStockPrices } from './stocks.js'
 import { consume, usage } from './rateBudget.js'
@@ -227,6 +228,16 @@ async function main() {
     log(`Skipping stocks — ${reason}.`)
   }
 
+  // Metals trade nearly around the clock, so unlike equities they are fetched
+  // every run rather than gated by an exchange window.
+  let commodities = previous?.commodities ?? {}
+  try {
+    const fresh = await fetchCommodityPrices()
+    if (Object.keys(fresh).length > 0) commodities = fresh
+  } catch (err) {
+    log(`Commodities failed (${err.message}) — keeping the previous values.`)
+  }
+
   const eurRate = (await fetchEurRate()) ?? previous?.eurRate ?? 0.86
   const now = new Date().toISOString()
 
@@ -237,6 +248,7 @@ async function main() {
     eurRate,
     crypto,
     stocks,
+    commodities,
     stocksUpdatedAt,
     stocksUpdatedAtCET: stocksUpdatedAt ? formatCET(stocksUpdatedAt) : null,
     stockWindow: {
@@ -251,7 +263,7 @@ async function main() {
   // ── History: append this snapshot so charts have a series to draw ──
   if (dbConnected) {
     try {
-      await recordSnapshot({ ...crypto, ...stocks }, log)
+      await recordSnapshot({ ...crypto, ...stocks, ...commodities }, log)
       // Housekeeping is cheap and idempotent; once an hour is plenty.
       if (new Date().getMinutes() < 5) await pruneIntraday(log)
     } catch (err) {

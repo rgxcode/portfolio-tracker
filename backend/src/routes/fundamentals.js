@@ -6,6 +6,7 @@ import { loadFinancials } from '../jobs/edgar.js'
 import Constituent from '../models/Constituent.js'
 import PriceHistory from '../models/PriceHistory.js'
 import Coin from '../models/Coin.js'
+import { COMMODITIES } from '../jobs/commodities.js'
 import { formatCET } from '../jobs/marketHours.js'
 import { computeMetrics, priceRange52w, PROVIDER_ONLY } from '../jobs/metrics.js'
 
@@ -143,8 +144,9 @@ router.get('/search', async (req, res, next) => {
      * under Crypto returned three equities above the coin.
      */
     const only = String(req.query.type ?? '').toLowerCase()
-    const wantStocks = only !== 'crypto'
-    const wantCrypto = only !== 'stock'
+    const wantStocks = only === '' || only === 'stock'
+    const wantCrypto = only === '' || only === 'crypto'
+    const wantCommodities = only === '' || only === 'commodity'
 
     // Escape the input: a stray "(" from a company name would otherwise throw,
     // and a "." would quietly match any character.
@@ -171,10 +173,17 @@ router.get('/search', async (req, res, next) => {
     // Exact ticker matches first, then prefixes, then names — the order someone
     // typing "NV" expects. Crypto interleaves at each tier rather than being
     // relegated below every equity.
+    // A fixed handful, so matching them in memory is simpler than a collection.
+    const commodityHits = wantCommodities
+      ? Object.entries(COMMODITIES)
+        .filter(([sym, m]) => starts.test(sym) || contains.test(m.name))
+        .map(([sym, m]) => ({ symbol: sym, name: m.name, sector: 'Commodities', type: 'commodity' }))
+      : []
+
     const seen = new Set()
     const results = []
     const tiers = [
-      [...exact.map(shapeStock), ...coinExact.map(shapeCoin)],
+      [...exact.map(shapeStock), ...coinExact.map(shapeCoin), ...commodityHits],
       [...byPrefix.map(shapeStock), ...coinPrefix.map(shapeCoin)],
       [...byName.map(shapeStock), ...coinName.map(shapeCoin)],
     ]

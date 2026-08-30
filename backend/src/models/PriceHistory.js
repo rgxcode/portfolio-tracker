@@ -10,7 +10,7 @@ import mongoose from 'mongoose'
 const priceHistorySchema = new mongoose.Schema(
   {
     symbol: { type: String, required: true, uppercase: true },
-    type: { type: String, enum: ['crypto', 'stock'], required: true },
+    type: { type: String, enum: ['crypto', 'stock', 'commodity'], required: true },
     // The instant the price belongs to — the exchange/source timestamp, not
     // the moment we fetched it.
     ts: { type: Date, required: true },

@@ -1,5 +1,5 @@
 <template>
-  <div class="relative w-full h-full min-h-[280px] flex items-center justify-center">
+  <div class="relative w-full h-full flex items-center justify-center">
     <div v-if="!hasData" class="text-center text-gray-400">
       <svg class="w-16 h-16 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"

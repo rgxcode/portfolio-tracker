@@ -19,8 +19,8 @@
     <span
       v-else
       class="w-full h-full flex items-center justify-center font-bold text-white leading-none"
-      :style="{ backgroundColor: color, fontSize }"
-    >{{ initials }}</span>
+      :style="{ backgroundColor: glyph ? 'transparent' : color, fontSize: glyph ? glyphSize : fontSize }"
+    >{{ glyph ?? initials }}</span>
   </span>
 </template>
 
@@ -48,21 +48,28 @@ const failed = ref(false)
 const px = computed(() => `${props.size}px`)
 
 /**
- * Coin logos are drawn as round badges and fill a circle correctly. Equity
- * logos are square artwork that reaches the edge of its frame, so a circular
- * crop cuts the corners off — Tesla and AMD both lost part of their mark. A
- * rounded square keeps the whole logo and still reads as an avatar.
+ * Coin logos are drawn as round badges and fill a circle correctly. Everything
+ * else is square artwork reaching the edge of its frame, so a circular crop
+ * removes the corners — which is where Tesla's and AMD's marks actually live.
+ * A barely-rounded square shows the logo whole.
  */
-const shape = computed(() => (props.type === 'crypto' ? 'rounded-full' : 'rounded-lg'))
+const shape = computed(() => (props.type === 'crypto' ? 'rounded-full' : 'rounded-md'))
 
 /**
  * Breathing room so artwork never touches the edge. Only for equities: a coin
  * badge is designed to fill its circle, and padding it would shrink it oddly.
  */
-const pad = computed(() => (props.type === 'crypto' ? '0px' : `${Math.max(2, Math.round(props.size * 0.1))}px`))
+const pad = computed(() => (props.type === 'crypto' ? '0px' : `${Math.max(1, Math.round(props.size * 0.06))}px`))
 const fontSize = computed(() => `${Math.max(9, Math.round(props.size * 0.36))}px`)
+const glyphSize = computed(() => `${Math.round(props.size * 0.62)}px`)
+
+/** No logo provider carries metals, so they get a glyph instead of initials. */
+const GLYPH: Record<string, string> = { GOLD: '🥇', SILVER: '🥈', COPPER: '🥉' }
+const glyph = computed(() =>
+  props.type === 'commodity' ? GLYPH[props.symbol?.toUpperCase()] ?? null : null)
 
 const src = computed(() => {
+  if (props.type === 'commodity') return null
   if (props.type === 'crypto') return props.image || null
   const t = props.symbol?.toUpperCase()
   if (!t) return null

@@ -250,7 +250,7 @@
           <!-- By Type -->
           <div class="bg-gray-800/50 rounded-2xl border border-gray-700 p-5">
             <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase mb-3">By Type</p>
-            <div class="h-56">
+            <div class="h-72">
               <AllocationPieChart
                 :labels="typeAllocation.labels"
                 :values="typeAllocation.values"
@@ -262,7 +262,7 @@
           <!-- By Asset -->
           <div class="bg-gray-800/50 rounded-2xl border border-gray-700 p-5">
             <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase mb-3">By Asset</p>
-            <div class="h-56">
+            <div class="h-72">
               <AllocationPieChart
                 :labels="assetAllocation.labels"
                 :values="assetAllocation.values"
@@ -424,9 +424,10 @@ const assetTabs = [
   { label: 'All', value: 'all' },
   { label: 'Crypto', value: 'crypto' },
   { label: 'Stocks', value: 'stock' },
+  { label: 'Commodities', value: 'commodity' },
 ] as const
 
-type TabValue = 'all' | 'crypto' | 'stock'
+type TabValue = 'all' | 'crypto' | 'stock' | 'commodity'
 const activeTab = ref<TabValue>('all')
 
 const filteredAssets = computed(() => {

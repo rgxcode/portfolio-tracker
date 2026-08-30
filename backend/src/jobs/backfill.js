@@ -14,6 +14,7 @@
  *   node src/jobs/backfill.js BTC ETH AMD  # only these symbols
  *   node src/jobs/backfill.js --sp500      # every S&P 500 member, no crypto
  *   node src/jobs/backfill.js --crypto     # every tracked coin, no stocks
+ *   node src/jobs/backfill.js --commodities # gold, silver, copper
  *
  * --sp500 is a deliberate operator action, not automatic traffic: it makes ~500
  * requests over roughly ten minutes and is therefore paced by STOCK_STAGGER_MS
@@ -31,6 +32,7 @@ import { resolveStockSymbols } from './stocks.js'
 import { refreshConstituents } from './sp500.js'
 import { refreshCoins, coinIdMap } from './coinlist.js'
 import Coin from '../models/Coin.js'
+import { COMMODITIES } from './commodities.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -180,10 +182,37 @@ async function main() {
   const args = process.argv.slice(2)
   const wantSp500 = args.includes('--sp500')
   const wantCrypto = args.includes('--crypto')
+  const wantCommodities = args.includes('--commodities')
   const requested = args.filter(a => !a.startsWith('--')).map(s => s.toUpperCase())
 
   let cryptoSymbols
   let stockSymbols
+  if (wantCommodities) {
+    // Futures symbols contain '=', so the contract is looked up rather than
+    // derived from the ticker the way an equity's is.
+    let total = 0
+    for (const [symbol, meta] of Object.entries(COMMODITIES)) {
+      await delay(STOCK_STAGGER_MS)
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(meta.yahoo)}?interval=1d&range=${STOCK_RANGE}`
+        const result = (await getJson(url))?.chart?.result?.[0]
+        const stamps = result?.timestamp ?? []
+        const closes = result?.indicators?.quote?.[0]?.close ?? []
+        const points = stamps
+          .map((t, i) => ({ ts: new Date(t * 1000), price: closes[i], source: 'yahoo-backfill' }))
+          .filter(p => typeof p.price === 'number')
+        const n = await store(symbol, 'commodity', points)
+        total += n
+        log(`  ${symbol} (${meta.yahoo}): +${n} daily points`)
+      } catch (err) {
+        log(`  ${symbol}: FAILED — ${err.message}`)
+      }
+    }
+    log(`Done. Added ${total} points.`)
+    await mongoose.disconnect()
+    return
+  }
+
   if (wantCrypto) {
     // Refresh the rankings first so a coin that has risen into range is caught.
     cryptoSymbols = await refreshCoins()

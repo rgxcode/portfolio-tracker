@@ -226,7 +226,7 @@ router.get('/:symbol', async (req, res, next) => {
   try {
     const data = await readPrices()
     const symbol = req.params.symbol.toUpperCase()
-    const entry = data.crypto?.[symbol] ?? data.stocks?.[symbol]
+    const entry = data.crypto?.[symbol] ?? data.stocks?.[symbol] ?? data.commodities?.[symbol]
     if (!entry) return res.status(404).json({ error: `No price for ${symbol}` })
     res.json({ ...entry, ageMinutes: ageMinutes(entry.asOf) })
   } catch (err) {

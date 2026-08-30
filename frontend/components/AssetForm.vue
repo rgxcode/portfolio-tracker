@@ -27,6 +27,16 @@
           >
             📈 Stock
           </button>
+          <button
+            type="button"
+            class="flex-1 py-2 rounded-lg text-sm font-medium border transition-colors"
+            :class="form.type === 'commodity'
+              ? 'bg-amber-600 border-amber-500 text-white'
+              : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'"
+            @click="form.type = 'commodity'"
+          >
+            🥇 Metal
+          </button>
         </div>
       </div>
 
@@ -35,7 +45,9 @@
         <label class="block text-sm font-medium text-gray-300 mb-1">
           Symbol
           <span class="text-gray-500 font-normal">
-            {{ form.type === 'crypto' ? '(e.g. BTC, ETH, SOL)' : '(e.g. AAPL, TSLA, MSFT)' }}
+            {{ form.type === 'crypto' ? '(e.g. BTC, ETH, SOL)'
+              : form.type === 'commodity' ? '(GOLD, SILVER, COPPER)'
+              : '(e.g. AAPL, TSLA, MSFT)' }}
           </span>
         </label>
         <div class="relative">
@@ -66,7 +78,9 @@
               <span class="text-gray-300 text-sm truncate">{{ s.name }}</span>
               <span
                 class="text-[10px] ml-auto shrink-0 px-1.5 py-0.5 rounded"
-                :class="s.type === 'crypto' ? 'bg-blue-900/60 text-blue-300' : 'bg-purple-900/60 text-purple-300'"
+                :class="s.type === 'crypto' ? 'bg-blue-900/60 text-blue-300'
+                  : s.type === 'commodity' ? 'bg-amber-900/60 text-amber-300'
+                  : 'bg-purple-900/60 text-purple-300'"
               >{{ s.type }}</span>
             </li>
           </ul>
@@ -145,7 +159,7 @@ const supportedSymbols = computed(() => supportedCrypto.value)
 onMounted(loadSupportedCrypto)
 
 const form = reactive({
-  type: 'crypto' as 'crypto' | 'stock',
+  type: 'crypto' as 'crypto' | 'stock' | 'commodity',
   symbol: '',
   name: '',
   quantity: null as number | null,
