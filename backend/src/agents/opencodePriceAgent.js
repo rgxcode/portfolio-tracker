@@ -22,6 +22,7 @@
  */
 
 import { spawn } from 'child_process'
+import { mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import mongoose from 'mongoose'
@@ -30,7 +31,15 @@ import { saveSnapshot, loadSnapshot, LLM } from '../jobs/snapshotStore.js'
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+/**
+ * Working directory for the `opencode` subprocess. It holds no state now that
+ * snapshots live in the database, but it must exist: spawn reports a missing
+ * cwd as ENOENT naming the *binary*, so an absent directory looks exactly like
+ * an uninstalled CLI. It is gitignored, so on a fresh host there is nothing to
+ * create it — hence doing so here rather than assuming it.
+ */
 const DATA_DIR = resolve(__dirname, '..', '..', 'data')
+mkdirSync(DATA_DIR, { recursive: true })
 const MONGO_URL =
   process.env.MONGODB_URI
   || process.env.COSMOS_DB_CONNECTION_STRING // legacy name, kept so existing .env files keep working
