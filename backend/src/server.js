@@ -7,6 +7,7 @@ import mongoose from 'mongoose'
 import authRouter from './routes/auth.js'
 import assetsRouter from './routes/assets.js'
 import pricesRouter from './routes/prices.js'
+import adminRouter from './routes/admin.js'
 
 // Load .env manually (avoid dotenv dependency)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -41,6 +42,7 @@ app.use(express.json())
 app.use('/api/auth', authRouter)
 app.use('/api/assets', assetsRouter)
 app.use('/api/prices', pricesRouter)
+app.use('/api/admin', adminRouter)
 
 // Health check
 app.get('/api/health', (_req, res) => {

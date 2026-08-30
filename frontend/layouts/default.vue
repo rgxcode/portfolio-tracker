@@ -28,6 +28,14 @@
               >
                 Assets
               </NuxtLink>
+              <NuxtLink
+                v-if="authStore.isAdmin"
+                to="/admin"
+                class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                :class="$route.path === '/admin' ? 'bg-blue-600 text-white' : 'text-amber-300/90 hover:bg-gray-700'"
+              >
+                Admin
+              </NuxtLink>
               <span class="text-gray-400 text-sm ml-3 hidden sm:inline">{{ authStore.user?.email }}</span>
               <button
                 @click="authStore.logout()"

@@ -3,6 +3,10 @@ import { defineStore } from 'pinia'
 interface AuthUser {
   id: string
   email: string
+  // Derived by the server from configuration, never sent by the client. It only
+  // decides whether the UI offers the admin link; the API enforces access
+  // independently on every admin route.
+  isAdmin?: boolean
 }
 
 interface AuthState {
@@ -22,6 +26,7 @@ export const useAuthStore = defineStore('auth', {
 
   getters: {
     isAuthenticated: (state) => !!state.token && !!state.user,
+    isAdmin: (state) => state.user?.isAdmin === true,
   },
 
   actions: {

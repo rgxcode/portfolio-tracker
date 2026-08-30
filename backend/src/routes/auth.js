@@ -2,10 +2,25 @@ import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import auth from '../middleware/auth.js'
+import { isAdminEmail } from '../admins.js'
 
 const router = Router()
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production'
 const JWT_EXPIRES_IN = '7d'
+
+/**
+ * The client-facing shape of a user. isAdmin is derived here rather than stored
+ * on the document or put in the token, so it always reflects current
+ * configuration - see admins.js. It only drives what the UI offers; every
+ * admin route checks for itself.
+ */
+function shapeUser(user) {
+  return {
+    id: user._id,
+    email: user.email,
+    isAdmin: isAdminEmail(user.email),
+  }
+}
 
 function signToken(userId) {
   return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
@@ -32,7 +47,7 @@ router.post('/signup', async (req, res, next) => {
     const user = await User.create({ email: email.toLowerCase().trim(), passwordHash })
 
     const token = signToken(user._id)
-    res.status(201).json({ token, user: { id: user._id, email: user.email } })
+    res.status(201).json({ token, user: shapeUser(user) })
   } catch (err) {
     next(err)
   }
@@ -58,7 +73,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     const token = signToken(user._id)
-    res.json({ token, user: { id: user._id, email: user.email } })
+    res.json({ token, user: shapeUser(user) })
   } catch (err) {
     next(err)
   }
@@ -71,7 +86,7 @@ router.get('/me', auth, async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' })
     }
-    res.json({ id: user._id, email: user.email })
+    res.json(shapeUser(user))
   } catch (err) {
     next(err)
   }
