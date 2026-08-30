@@ -283,10 +283,22 @@ router.get('/:symbol', async (req, res, next) => {
      * company" for NVIDIA while rendering its financials is nonsense.
      */
     const member = await Constituent.findById(symbol).lean()
+    const coin = member ? null : await Coin.findById(symbol).lean()
+    const metal = COMMODITIES[symbol] ?? null
+
+    /**
+     * What kind of thing this is, so the page can stop describing a coin as a
+     * company. A cryptocurrency has no income statement and no P/E; reporting
+     * those as "unavailable" implies they are missing rather than inapplicable.
+     */
+    const kind = metal ? 'commodity' : coin ? 'crypto' : 'stock'
+
     const identity = {
-      name: doc.name || member?.name || filings?.entityName || null,
-      sector: doc.sector || member?.sector || null,
-      industry: doc.industry || member?.subIndustry || null,
+      kind,
+      name: doc.name || member?.name || coin?.name || metal?.name || filings?.entityName || null,
+      sector: doc.sector || member?.sector || (coin ? 'Cryptocurrency' : metal ? 'Commodity' : null),
+      industry: doc.industry || member?.subIndustry || (metal ? `Priced per ${metal.unit}` : null),
+      logo: coin?.image ?? null,
     }
 
     /**
@@ -316,6 +328,8 @@ router.get('/:symbol', async (req, res, next) => {
     const statementsAvailable = Boolean(
       statements || doc.incomeQuarterly?.length || doc.balanceSheetQuarterly?.length,
     )
+    // Only a company can be missing financials; a coin simply does not file any.
+    const statementsExpected = kind === 'stock'
     const metricsAvailable = Object.values(metrics).some(v => v != null)
 
     res.json({
@@ -329,6 +343,7 @@ router.get('/:symbol', async (req, res, next) => {
       ...(statements ?? { financialsSource: 'alphavantage' }),
       ...identity,
       statementsAvailable,
+      statementsExpected,
       metricsAvailable,
       symbol: doc._id,
       ageHours: +(((Date.now() - new Date(doc.fetchedAt).getTime()) / 3600e3)).toFixed(1),

@@ -5,8 +5,8 @@
       <div class="flex items-center gap-3 min-w-0">
         <AssetLogo
           :symbol="symbol"
-          :type="data?.quote?.type ?? (data?.sector === 'Crypto' ? 'crypto' : 'stock')"
-          :image="data?.quote?.image ?? null"
+          :type="data?.kind ?? 'stock'"
+          :image="data?.logo ?? data?.quote?.image ?? null"
           :size="48"
         />
         <div class="min-w-0">
@@ -37,7 +37,10 @@
 
     <template v-if="data">
       <!-- Financials missing: say what is missing and why, and still show the rest -->
-      <div v-if="!data.statementsAvailable" class="bg-amber-900/25 border border-amber-700/60 rounded-xl p-4 mb-6">
+      <div
+        v-if="data.statementsExpected && !data.statementsAvailable"
+        class="bg-amber-900/25 border border-amber-700/60 rounded-xl p-4 mb-6"
+      >
         <p class="text-amber-200 text-sm font-medium">No financial statements for {{ symbol }} yet.</p>
         <p class="text-amber-300/70 text-xs mt-1">
           Statements come from SEC filings, which cover S&amp;P 500 members. Price and related
@@ -48,7 +51,10 @@
       <!-- Statements are present but the ratio provider is out of quota: a much
            smaller gap, and saying "unavailable" above a full income statement
            was simply wrong. -->
-      <div v-else-if="!data.metricsAvailable" class="bg-gray-800/60 border border-gray-700 rounded-xl p-3 mb-6">
+      <div
+        v-else-if="data.statementsExpected && !data.metricsAvailable"
+        class="bg-gray-800/60 border border-gray-700 rounded-xl p-3 mb-6"
+      >
         <p class="text-gray-300 text-xs">
           Ratios aren't available for {{ symbol }} — that needs either filed financials to compute
           from, or the metered provider, and neither is present.
@@ -86,6 +92,10 @@
           >{{ expanded ? 'less' : 'more' }}</button>
         </p>
       </section>
+
+      <!-- Price history first: it is the one thing every asset has, whether or
+           not it files accounts. -->
+      <PriceHistoryChart :symbol="symbol" />
 
       <!-- Charts come before the tables: the shape of the trend is the thing
            most people want, and the numbers are there to check it against. -->
