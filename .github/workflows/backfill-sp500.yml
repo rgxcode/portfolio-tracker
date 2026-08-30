@@ -41,6 +41,12 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: node src/jobs/backfill.js --sp500
 
+      - name: Backfill commodity history
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: node src/jobs/backfill.js --commodities
+
       - name: Refresh the coin rankings and backfill crypto
         working-directory: backend
         env:
