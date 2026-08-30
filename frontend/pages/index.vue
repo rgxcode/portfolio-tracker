@@ -27,6 +27,22 @@
       </div>
     </div>
 
+    <!-- Look up any S&P 500 company without owning it -->
+    <div class="flex items-center justify-between gap-3 mb-6 flex-wrap">
+      <TickerSearch
+        placeholder="Look up a ticker or company…"
+        button-label="Open"
+        width-class="w-64 sm:w-80"
+        @select="openTicker"
+      />
+      <NuxtLink
+        to="/compare"
+        class="px-3 py-1.5 rounded-lg text-sm bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 transition-colors shrink-0"
+      >
+        Compare stocks
+      </NuxtLink>
+    </div>
+
     <template v-if="store.assets.length > 0">
       <!-- Asset type filter tabs -->
       <div class="flex items-center gap-2 mb-6">
@@ -356,6 +372,10 @@ const snapshotAge = computed(() => {
   const hrs = Math.floor(mins / 60)
   return hrs === 1 ? '1 hour ago' : `${hrs} hours ago`
 })
+
+function openTicker(symbol: string) {
+  navigateTo({ path: '/asset', query: { symbol } })
+}
 
 async function pollTick() {
   await pollPrices()

@@ -18,37 +18,7 @@
       </div>
 
       <div class="flex items-center gap-2">
-        <form class="relative flex items-center gap-2" @submit.prevent="submitSearch">
-          <input
-            v-model="search"
-            placeholder="Ticker or company…"
-            autocomplete="off"
-            class="w-56 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-            @keydown.down.prevent="move(1)"
-            @keydown.up.prevent="move(-1)"
-            @keydown.esc="suggestions = []"
-            @blur="closeSoon"
-            @focus="lookup"
-          />
-          <button type="submit" class="px-3 py-1.5 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white">Go</button>
-
-          <ul
-            v-if="suggestions.length"
-            class="absolute top-full left-0 mt-1 w-72 z-30 bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden"
-          >
-            <li
-              v-for="(s, i) in suggestions"
-              :key="s.symbol"
-              class="px-3 py-2 cursor-pointer flex items-baseline gap-2"
-              :class="i === highlighted ? 'bg-gray-700' : 'hover:bg-gray-800'"
-              @mousedown.prevent="go(s.symbol)"
-            >
-              <span class="font-semibold text-white text-sm w-14 shrink-0">{{ s.symbol }}</span>
-              <span class="text-gray-300 text-sm truncate">{{ s.name }}</span>
-              <span class="text-gray-500 text-[11px] ml-auto shrink-0 hidden sm:inline">{{ s.sector }}</span>
-            </li>
-          </ul>
-        </form>
+        <TickerSearch @select="go" />
         <NuxtLink to="/" class="px-3 py-1.5 rounded-lg text-sm bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700">
           Back
         </NuxtLink>
@@ -310,7 +280,6 @@ const loading = ref(false)
 const refreshing = ref(false)
 const error = ref<string | null>(null)
 const detail = ref<string | null>(null)
-const search = ref('')
 const expanded = ref(false)
 const allIncome = ref(false)
 const allBalance = ref(false)
@@ -351,52 +320,9 @@ async function forceRefresh() {
   }
 }
 
-const suggestions = ref<Array<{ symbol: string, name: string, sector: string }>>([])
-const highlighted = ref(-1)
-let lookupTimer: ReturnType<typeof setTimeout> | null = null
-
-/** Debounced: a request per keystroke would be mostly wasted round trips. */
-watch(search, () => {
-  if (lookupTimer) clearTimeout(lookupTimer)
-  lookupTimer = setTimeout(lookup, 150)
-})
-
-async function lookup() {
-  const q = search.value.trim()
-  if (q.length < 1) { suggestions.value = []; return }
-  try {
-    const res = await apiFetch<{ results: any[] }>(
-      `/api/fundamentals/search?q=${encodeURIComponent(q)}`,
-    )
-    suggestions.value = res.results ?? []
-    highlighted.value = suggestions.value.length ? 0 : -1
-  } catch {
-    // A failed suggestion lookup must not block typing a ticker directly.
-    suggestions.value = []
-  }
-}
-
-function move(step: number) {
-  if (!suggestions.value.length) return
-  highlighted.value = (highlighted.value + step + suggestions.value.length) % suggestions.value.length
-}
-
-/** Enter takes the highlighted suggestion, or whatever was typed. */
-function submitSearch() {
-  const pick = suggestions.value[highlighted.value]
-  go(pick ? pick.symbol : search.value)
-}
-
-/** Let a click on a suggestion land before the list closes on blur. */
-function closeSoon() {
-  setTimeout(() => { suggestions.value = [] }, 120)
-}
-
 function go(s: string) {
   const t = s.trim().toUpperCase()
   if (t) router.push({ path: '/asset', query: { symbol: t } })
-  search.value = ''
-  suggestions.value = []
 }
 
 // ── Formatting ──────────────────────────────────────────────────────

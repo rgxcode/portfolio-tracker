@@ -143,12 +143,49 @@ router.get('/:symbol/history', async (req, res, next) => {
 
     const points = downsample(rows.map(r => ({ timestamp: r.ts.getTime(), price: r.price })))
 
+    /**
+     * A closed market is not missing data.
+     *
+     * Over a weekend a 1D window contains no stock prices at all, and an empty
+     * series rendered as "no price history available" — which reads as a broken
+     * feed rather than a shut exchange. The last close still describes the
+     * position for the whole window, so carry it forward: one point at the start
+     * of the range and one at the end draws the flat line that is the truth.
+     */
+    let carried = false
+    if (points.length < 2) {
+      const previous = await PriceHistory.findOne(
+        { symbol, ts: { $lt: cutoff } },
+        { _id: 0, ts: 1, price: 1 },
+      )
+        .sort({ ts: -1 })
+        .lean()
+
+      if (previous) {
+        const price = points[0]?.price ?? previous.price
+        // Keep any real point in the window; the flat line spans the rest.
+        const flat = [
+          { timestamp: cutoff.getTime(), price: previous.price },
+          ...points,
+          { timestamp: Date.now(), price },
+        ]
+        points.length = 0
+        points.push(...flat)
+        carried = true
+      }
+    }
+
     res.json({
       symbol,
       period,
       count: points.length,
       // Charts get a series that came entirely from data we collected.
       source: 'local-history',
+      // True when the window held no new prices and the last close was carried
+      // across it, so the client can label a flat line rather than imply
+      // movement that did not happen.
+      carriedForward: carried,
+      lastObservedAt: carried ? rows[rows.length - 1]?.ts ?? null : null,
       points,
     })
   } catch (err) {
