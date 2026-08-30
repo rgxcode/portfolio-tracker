@@ -30,12 +30,26 @@ const log = (...a) => console.log(`[${formatCET()}] edgar:`, ...a)
  * filings use one of several predecessors.
  */
 const CONCEPTS = {
+  /**
+   * Order matters: the first concept reporting a period wins, later ones fill
+   * the gaps. The modern tag came in with ASC 606 in 2018; the rest cover
+   * earlier filings and industries that never used it.
+   *
+   * The bank entries are not optional extras — a lender has no "sales", so
+   * JPMorgan tags revenue net of interest expense and reported no revenue at
+   * all under the tech-shaped list this started as.
+   */
   revenue: [
     'RevenueFromContractWithCustomerExcludingAssessedTax',
     'RevenueFromContractWithCustomerIncludingAssessedTax',
     'Revenues',
+    'RevenuesNetOfInterestExpense',
     'SalesRevenueNet',
     'SalesRevenueGoodsNet',
+    'SalesRevenueServicesNet',
+    'InterestAndDividendIncomeOperating',
+    'PremiumsEarnedNet',
+    'TotalRevenuesAndOtherIncome',
   ],
   grossProfit: ['GrossProfit'],
   operatingIncome: ['OperatingIncomeLoss'],
