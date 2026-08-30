@@ -107,10 +107,19 @@ function periodCutoff(period) {
     case '1M': return now - 30 * 86400e3
     case 'YTD': return new Date(new Date().getFullYear(), 0, 1).getTime()
     case '1Y': return now - 365 * 86400e3
+    case '3Y': return now - 3 * 365 * 86400e3
+    case '5Y': return now - 5 * 365 * 86400e3
     case 'ALL': return 0
-    default: return now - 86400e3
+    // An unrecognised period used to fall through to one day, so asking for 5Y
+    // returned a single session and looked like missing history rather than an
+    // unsupported range. A month is a harmless answer to a question we did not
+    // understand; the supported set is echoed back so a caller can tell.
+    default: return now - 30 * 86400e3
   }
 }
+
+/** Periods this endpoint understands, surfaced so clients need not guess. */
+const PERIODS = ['1H', '1D', '1W', '1M', 'YTD', '1Y', '3Y', '5Y', 'ALL']
 
 /**
  * Evenly thin a series to at most `max` points. A chart a few hundred pixels
@@ -178,6 +187,7 @@ router.get('/:symbol/history', async (req, res, next) => {
     res.json({
       symbol,
       period,
+      supportedPeriods: PERIODS,
       count: points.length,
       // Charts get a series that came entirely from data we collected.
       source: 'local-history',
