@@ -61,10 +61,10 @@ export async function priceRange52w(symbol) {
 /**
  * Compute what we can from filings plus a current price.
  *
- * `quarters` must be newest-first, as stored. `price` may be null — the
- * fundamentals that do not involve price are still returned.
+ * `quarters` must be newest-first, as stored. `price` and `sharesOutstanding`
+ * may be null — the fundamentals that do not need them are still returned.
  */
-export function computeMetrics(quarters, price) {
+export function computeMetrics(quarters, price, sharesOutstanding = null) {
   if (!quarters?.length) return {}
 
   const revenueTTM = ttm(quarters, 'revenue')
@@ -72,7 +72,9 @@ export function computeMetrics(quarters, price) {
   const operatingIncomeTTM = ttm(quarters, 'operatingIncome')
   const grossProfitTTM = ttm(quarters, 'grossProfit')
 
-  const shares = latest(quarters, 'sharesOutstanding')
+  // Company-level, from the filing cover page — see edgar.js. Quarter rows do
+  // not carry it, because the cover date never matches a period end.
+  const shares = sharesOutstanding
   const equity = latest(quarters, 'equity')
   const assets = latest(quarters, 'assets')
 

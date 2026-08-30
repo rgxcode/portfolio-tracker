@@ -47,23 +47,42 @@ const CONCEPTS = {
   liabilities: ['Liabilities'],
   equity: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
   cash: ['CashAndCashEquivalentsAtCarryingValue'],
-  /**
-   * Share count, needed for market cap and every per-share ratio.
-   *
-   * The cover-page figure (dei) is the most current and the one a market cap
-   * should use; the balance-sheet figure is the fallback for filings that omit
-   * it. Weighted-average counts are deliberately not used — they describe a
-   * period for EPS purposes, not how many shares exist now.
-   */
-  sharesOutstanding: [
-    'EntityCommonStockSharesOutstanding',
-    'CommonStockSharesOutstanding',
-  ],
 }
 
 const DURATION_METRICS = new Set([
   'revenue', 'grossProfit', 'operatingIncome', 'netIncome', 'researchAndDevelopment', 'eps',
 ])
+
+/**
+ * Share counts, which belong to the company rather than to a quarter.
+ *
+ * The cover-page figure is stamped with the filing's cover date — NVIDIA's most
+ * recent is 21 August against a quarter ending 26 July — so it never lines up
+ * with a period end. Matching it to the quarter grid therefore silently fell
+ * back to an old value: a pre-split 613 million rather than 24.1 billion, which
+ * put NVIDIA's market cap out by a factor of forty.
+ *
+ * A market cap wants the number of shares that exist now, so take the most
+ * recently dated fact regardless of period, preferring the cover page.
+ */
+const SHARE_CONCEPTS = ['EntityCommonStockSharesOutstanding', 'CommonStockSharesOutstanding']
+
+function latestShareCount(facts) {
+  let best = null
+  for (const name of SHARE_CONCEPTS) {
+    const concept = facts[name]
+    if (!concept) continue
+    for (const unitFacts of Object.values(concept.units)) {
+      for (const f of unitFacts) {
+        if (f.val == null || !f.end) continue
+        if (!best || f.end > best.end) best = { end: f.end, val: f.val }
+      }
+    }
+    // The cover page is authoritative; only consult the fallback if it is absent.
+    if (best) break
+  }
+  return best
+}
 
 /** A quarter, allowing for 13-week retail calendars and filing slack. */
 const isQuarterLong = (start, end) => {
@@ -294,9 +313,19 @@ export async function refreshFinancials(symbol, cik) {
   const quarters = buildQuarters(facts)
   if (quarters.length === 0) throw new Error('no quarterly figures found')
 
+  const gaap = { ...(facts.facts?.['us-gaap'] ?? {}), ...(facts.facts?.dei ?? {}) }
+  const shares = latestShareCount(gaap)
+
   await FinancialHistory.findByIdAndUpdate(
     ticker,
-    { cik: id, entityName: facts.entityName, quarters, fetchedAt: new Date() },
+    {
+      cik: id,
+      entityName: facts.entityName,
+      quarters,
+      sharesOutstanding: shares?.val ?? null,
+      sharesAsOf: shares?.end ?? null,
+      fetchedAt: new Date(),
+    },
     { upsert: true, new: true },
   )
   return quarters.length

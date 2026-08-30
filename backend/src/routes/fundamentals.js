@@ -261,7 +261,11 @@ router.get('/:symbol', async (req, res, next) => {
      * the current price, so they cannot go stale the way a value cached for a
      * week does. The provider keeps only the fields nothing filed can supply.
      */
-    const computed = computeMetrics(filings?.quarters ?? [], quote?.price ?? null)
+    const computed = computeMetrics(
+      filings?.quarters ?? [],
+      quote?.price ?? null,
+      filings?.sharesOutstanding ?? null,
+    )
     const range = canCompute ? await priceRange52w(symbol) : {}
 
     const providerMetrics = {}

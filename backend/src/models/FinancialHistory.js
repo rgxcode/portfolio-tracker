@@ -26,6 +26,13 @@ const financialHistorySchema = new mongoose.Schema(
      */
     quarters: { type: [new mongoose.Schema({ _id: false }, { strict: false })], default: () => [] },
 
+    /**
+     * Shares in issue at the most recent filing's cover date — a company-level
+     * fact, not a quarterly one, and what a market cap needs.
+     */
+    sharesOutstanding: Number,
+    sharesAsOf: String,
+
     fetchedAt: { type: Date, required: true },
   },
   { minimize: false, versionKey: false },
