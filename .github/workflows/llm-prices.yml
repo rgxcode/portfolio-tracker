@@ -1,0 +1,58 @@
+name: LLM prices
+
+# Runs the OpenCode price agent, which reads prices off web pages with a free
+# LLM rather than calling a market-data API.
+#
+# Why here and not in the backend: the agent spawns the `opencode` CLI, which
+# needs more memory than the free web instance has. Spawning it there got the
+# process OOM-killed and took the API down with it, so the backend only does it
+# when LLM_REFRESH=on — never in production. A runner has ~7GB and 2 cores, so
+# the same run finishes comfortably.
+#
+# Cadence: every 5 minutes, GitHub's floor for scheduled workflows, and in
+# practice looser than that because it delays schedules under load. The agent
+# can refresh every few seconds when run on a real machine; that is not what
+# this gives you. Treat the LLM figures as "a few minutes old", the same way the
+# UI already flags a stale snapshot.
+#
+# Free: the models require no credentials, and Actions minutes are unmetered on
+# a public repository.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # trigger a run by hand from the Actions tab
+
+# Never let a slow run overlap the next scheduled one — two agents writing the
+# same snapshot document would interleave for no benefit.
+concurrency:
+  group: llm-prices
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # A lookup is normally 10-60s. This only bounds a wedged CLI, and stays
+    # under the 5-minute cadence so a stuck run cannot block the next one.
+    timeout-minutes: 4
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # opencode ships as a ~144MB platform binary, so this is the slow step.
+      # The npm cache above keeps it from being downloaded on every run.
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci --omit=dev
+
+      - name: Read prices with the LLM agent
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: node src/agents/opencodePriceAgent.js --once
