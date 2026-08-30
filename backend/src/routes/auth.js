@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
+import Asset from '../models/Asset.js'
 import auth from '../middleware/auth.js'
 import { isAdminEmail } from '../admins.js'
 import {
@@ -220,6 +221,76 @@ router.post('/change-password', auth, async (req, res, next) => {
     // the old one. Existing tokens stay valid until they expire - revoking them
     // would need a token store, which this app does not have.
     res.json({ token: signToken(user._id), user: shapeUser(user) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/auth/export — everything held about the caller, as JSON.
+ *
+ * The right of access and to portability under GDPR. Personal data lives in
+ * exactly two collections; prices and filings are public market data shared by
+ * every account, so they are not part of anyone's record.
+ */
+router.get('/export', auth, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId).lean()
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const assets = await Asset.find({ userId: req.userId }).lean()
+
+    // The hash is deliberately excluded: it is a credential, and handing back a
+    // bcrypt digest helps an attacker who obtained the export, not the person.
+    const { passwordHash, ...safe } = user
+
+    res.setHeader('Content-Disposition', 'attachment; filename="portfolio-tracker-export.json"')
+    res.json({
+      exportedAt: new Date().toISOString(),
+      account: {
+        ...safe,
+        hasPassword: Boolean(passwordHash),
+      },
+      holdings: assets.map(({ userId, ...a }) => a),
+      note: 'Prices and company filings are public market data shared by all accounts and are not personal data.',
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/auth/account — erase the account and everything in it.
+ *
+ * The right to erasure. Irreversible and immediate: there is no soft-delete
+ * flag, because a record marked deleted is still a record being kept.
+ *
+ * Confirmation is by typing the address, which is deliberate friction on an
+ * action nothing can undo. A password account must also supply its password —
+ * a token left open on a shared machine should not be enough to destroy data.
+ */
+router.delete('/account', auth, async (req, res, next) => {
+  try {
+    const { confirmEmail, password } = req.body ?? {}
+
+    const user = await User.findById(req.userId)
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    if (String(confirmEmail ?? '').toLowerCase().trim() !== user.email) {
+      return res.status(400).json({ error: 'Type your email address exactly to confirm' })
+    }
+
+    if (user.hasPassword()) {
+      if (!password) return res.status(400).json({ error: 'Your password is required' })
+      if (!(await user.comparePassword(password))) {
+        return res.status(401).json({ error: 'Password is incorrect' })
+      }
+    }
+
+    const { deletedCount } = await Asset.deleteMany({ userId: user._id })
+    await User.deleteOne({ _id: user._id })
+
+    res.json({ deleted: true, holdingsRemoved: deletedCount })
   } catch (err) {
     next(err)
   }

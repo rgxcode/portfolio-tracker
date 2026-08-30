@@ -69,7 +69,12 @@
     </main>
 
     <footer class="border-t border-gray-800 mt-16 py-6 text-center text-gray-500 text-sm">
-      Portfolio Tracker · Prices from CoinGecko & Alpha Vantage
+      <div class="flex items-center justify-center gap-3 flex-wrap">
+        <NuxtLink to="/privacy" class="hover:text-gray-300 transition-colors">Privacy</NuxtLink>
+        <span class="text-gray-700">·</span>
+        <NuxtLink to="/terms" class="hover:text-gray-300 transition-colors">Terms</NuxtLink>
+      </div>
+      <p class="mt-2">Prices from CoinGecko &amp; Yahoo · filings from SEC EDGAR · not financial advice</p>
     </footer>
   </div>
 </template>
