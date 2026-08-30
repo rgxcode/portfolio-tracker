@@ -10,17 +10,54 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
-    passwordHash: { type: String, required: true },
+    /**
+     * Absent for accounts created through a social provider — there is no
+     * password to hash. Anything reading this must cope with it missing rather
+     * than assume every account has one.
+     */
+    passwordHash: { type: String },
+
+    /**
+     * Linked social identities, by provider and that provider's stable user id.
+     * Keyed on the id rather than the email: an address can change hands, a
+     * provider's subject identifier cannot.
+     */
+    providers: {
+      type: [new mongoose.Schema({
+        provider: { type: String, required: true },   // 'google'
+        providerId: { type: String, required: true }, // provider's `sub`
+        email: String,
+        linkedAt: { type: Date, default: Date.now },
+      }, { _id: false })],
+      default: () => [],
+    },
+
+    /** Whether some provider has vouched for the address. Gates auto-linking. */
+    emailVerified: { type: Boolean, default: false },
+
+    name: String,
+    avatarUrl: String,
   },
   { timestamps: true },
 )
 
 userSchema.methods.comparePassword = async function (password) {
+  // A social-only account has nothing to compare against; say no rather than
+  // letting bcrypt decide what an undefined hash means.
+  if (!this.passwordHash) return false
   return bcrypt.compare(password, this.passwordHash)
+}
+
+/** True when the account can be signed into with a password at all. */
+userSchema.methods.hasPassword = function () {
+  return Boolean(this.passwordHash)
 }
 
 userSchema.statics.hashPassword = async function (password) {
   return bcrypt.hash(password, 12)
 }
+
+// One account per provider identity.
+userSchema.index({ 'providers.provider': 1, 'providers.providerId': 1 })
 
 export default mongoose.model('User', userSchema)

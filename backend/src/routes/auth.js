@@ -3,6 +3,9 @@ import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import auth from '../middleware/auth.js'
 import { isAdminEmail } from '../admins.js'
+import {
+  googleConfigured, authorizeUrl, exchangeCode, signState, verifyState,
+} from '../auth/google.js'
 
 const router = Router()
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production'
@@ -19,12 +22,109 @@ function shapeUser(user) {
     id: user._id,
     email: user.email,
     isAdmin: isAdminEmail(user.email),
+    name: user.name ?? null,
+    avatarUrl: user.avatarUrl ?? null,
+    // Lets the account page hide a password form that could not work.
+    hasPassword: Boolean(user.passwordHash),
+    providers: (user.providers ?? []).map(p => p.provider),
   }
 }
 
 function signToken(userId) {
   return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
 }
+
+/** Where the browser is sent back to once we have minted a token. */
+function frontendUrl() {
+  return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '')
+}
+
+/**
+ * GET /api/auth/providers — what sign-in methods this deployment offers.
+ * Lets the page show a Google button only where it would actually work.
+ */
+router.get('/providers', (_req, res) => {
+  res.json({ password: true, google: googleConfigured() })
+})
+
+// GET /api/auth/google — start the flow.
+router.get('/google', (req, res) => {
+  if (!googleConfigured()) {
+    return res.status(503).json({ error: 'Google sign-in is not configured on this server' })
+  }
+  res.redirect(authorizeUrl(signState()))
+})
+
+/**
+ * GET /api/auth/google/callback — Google sends the browser here with a code.
+ *
+ * Errors redirect back to the sign-in page carrying a short reason rather than
+ * rendering JSON: the user is mid-navigation in a browser, and a raw error
+ * object is a dead end for them.
+ */
+router.get('/google/callback', async (req, res, next) => {
+  const fail = reason =>
+    res.redirect(`${frontendUrl()}/auth?error=${encodeURIComponent(reason)}`)
+
+  try {
+    if (!googleConfigured()) return fail('Google sign-in is not configured')
+    if (req.query.error) return fail(String(req.query.error))
+    if (!req.query.code) return fail('No authorization code returned')
+    if (!verifyState(String(req.query.state ?? ''))) return fail('Sign-in link expired — try again')
+
+    const profile = await exchangeCode(String(req.query.code))
+
+    // Match on the provider's subject id first: it is stable even if the
+    // person later changes the address on their Google account.
+    let user = await User.findOne({
+      providers: { $elemMatch: { provider: 'google', providerId: profile.providerId } },
+    })
+
+    if (!user) {
+      const existing = await User.findOne({ email: profile.email })
+
+      if (existing) {
+        /**
+         * Linking by email is only safe when the provider has verified it.
+         * Otherwise anyone could register a provider account claiming someone
+         * else's address and inherit their portfolio.
+         */
+        if (!profile.emailVerified) {
+          return fail('Google has not verified this email address')
+        }
+        existing.providers.push({
+          provider: 'google', providerId: profile.providerId, email: profile.email,
+        })
+        existing.emailVerified = true
+        existing.name = existing.name || profile.name
+        existing.avatarUrl = existing.avatarUrl || profile.avatarUrl
+        await existing.save()
+        user = existing
+      } else {
+        user = await User.create({
+          email: profile.email,
+          emailVerified: profile.emailVerified,
+          name: profile.name,
+          avatarUrl: profile.avatarUrl,
+          providers: [{
+            provider: 'google', providerId: profile.providerId, email: profile.email,
+          }],
+        })
+      }
+    }
+
+    /**
+     * The token travels in the fragment, not the query string: a fragment is
+     * never sent to a server and stays out of Referer headers and server logs.
+     */
+    res.redirect(`${frontendUrl()}/auth#token=${encodeURIComponent(signToken(user._id))}`)
+  } catch (err) {
+    // Genuine faults still surface in the server log; the user gets a sentence.
+    console.error('google callback:', err.message)
+    if (!res.headersSent) return fail('Could not complete Google sign-in')
+    next(err)
+  }
+})
 
 // POST /api/auth/signup
 router.post('/signup', async (req, res, next) => {
@@ -97,6 +197,12 @@ router.post('/change-password', auth, async (req, res, next) => {
     const user = await User.findById(req.userId)
     if (!user) {
       return res.status(404).json({ error: 'User not found' })
+    }
+    if (!user.hasPassword()) {
+      // Signed up through a provider, so there is nothing to verify against.
+      return res.status(400).json({
+        error: 'This account signs in with Google and has no password to change',
+      })
     }
 
     // Re-check the current password even though the request is authenticated:

@@ -7,6 +7,11 @@ interface AuthUser {
   // decides whether the UI offers the admin link; the API enforces access
   // independently on every admin route.
   isAdmin?: boolean
+  name?: string | null
+  avatarUrl?: string | null
+  /** False for accounts created through a provider — nothing to change. */
+  hasPassword?: boolean
+  providers?: string[]
 }
 
 interface AuthState {

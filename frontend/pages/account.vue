@@ -3,7 +3,18 @@
     <h1 class="text-2xl font-bold text-white mb-1">Account</h1>
     <p class="text-sm text-gray-400 mb-6">{{ authStore.user?.email }}</p>
 
-    <form class="bg-gray-800 border border-gray-700 rounded-2xl p-5" @submit.prevent="submit">
+    <div
+      v-if="authStore.user && authStore.user.hasPassword === false"
+      class="bg-gray-800 border border-gray-700 rounded-2xl p-5"
+    >
+      <h2 class="font-semibold text-white mb-2">Sign-in method</h2>
+      <p class="text-sm text-gray-400">
+        This account signs in with {{ (authStore.user.providers ?? ['a provider']).join(', ') }},
+        so there is no password to change.
+      </p>
+    </div>
+
+    <form v-else class="bg-gray-800 border border-gray-700 rounded-2xl p-5" @submit.prevent="submit">
       <h2 class="font-semibold text-white mb-4">Change password</h2>
 
       <div v-if="success" class="mb-4 bg-emerald-900/30 border border-emerald-700 rounded-lg p-3">
