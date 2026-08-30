@@ -111,7 +111,13 @@
       <!-- Quarterly results -->
       <section v-if="data.incomeQuarterly?.length" class="bg-gray-800 border border-gray-700 rounded-2xl p-5 mb-6">
         <h2 class="font-semibold text-white mb-1">Quarterly results</h2>
-        <p class="text-xs text-gray-500 mb-3">Last {{ data.incomeQuarterly.length }} reported quarters, newest first.</p>
+        <p class="text-xs text-gray-500 mb-3">
+          {{ shownIncome.length }} of {{ data.incomeQuarterly.length }} quarters, newest first.
+          <button v-if="data.incomeQuarterly.length > 12" class="text-blue-400 hover:text-blue-300 ml-1" @click="allIncome = !allIncome">
+            {{ allIncome ? 'show fewer' : 'show all' }}
+          </button>
+          <span v-if="data.financialsSource === 'edgar'" class="ml-1">· as filed with the SEC</span>
+        </p>
         <div class="overflow-x-auto">
           <table class="w-full text-sm min-w-[42rem]">
             <thead>
@@ -126,8 +132,15 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="q in data.incomeQuarterly" :key="q.fiscalDateEnding" class="border-b border-gray-800 last:border-0">
-                <td class="py-2 text-gray-200">{{ q.fiscalDateEnding }}</td>
+              <tr v-for="q in shownIncome" :key="q.fiscalDateEnding" class="border-b border-gray-800 last:border-0">
+                <td class="py-2 text-gray-200">
+                  {{ q.fiscalDateEnding }}
+                  <span
+                    v-if="q.derived"
+                    class="text-[10px] text-amber-400/80 ml-1"
+                    title="Not filed as a standalone quarter — the annual figure minus the three quarters that were filed."
+                  >derived</span>
+                </td>
                 <td class="py-2 text-right text-gray-200">{{ big(q.totalRevenue) }}</td>
                 <td class="py-2 text-right text-gray-300">{{ big(q.grossProfit) }}</td>
                 <td class="py-2 text-right text-gray-300">{{ big(q.operatingIncome) }}</td>
@@ -178,7 +191,12 @@
       <!-- Balance sheet -->
       <section v-if="data.balanceSheetQuarterly?.length" class="bg-gray-800 border border-gray-700 rounded-2xl p-5 mb-6">
         <h2 class="font-semibold text-white mb-1">Balance sheet</h2>
-        <p class="text-xs text-gray-500 mb-3">Quarterly, newest first.</p>
+        <p class="text-xs text-gray-500 mb-3">
+          {{ shownBalance.length }} of {{ data.balanceSheetQuarterly.length }} quarters, newest first.
+          <button v-if="data.balanceSheetQuarterly.length > 12" class="text-blue-400 hover:text-blue-300 ml-1" @click="allBalance = !allBalance">
+            {{ allBalance ? 'show fewer' : 'show all' }}
+          </button>
+        </p>
         <div class="overflow-x-auto">
           <table class="w-full text-sm min-w-[46rem]">
             <thead>
@@ -193,7 +211,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="b in data.balanceSheetQuarterly" :key="b.fiscalDateEnding" class="border-b border-gray-800 last:border-0">
+              <tr v-for="b in shownBalance" :key="b.fiscalDateEnding" class="border-b border-gray-800 last:border-0">
                 <td class="py-2 text-gray-200">{{ b.fiscalDateEnding }}</td>
                 <td class="py-2 text-right text-gray-200">{{ big(b.totalAssets) }}</td>
                 <td class="py-2 text-right text-gray-300">{{ big(b.cashAndCashEquivalents) }}</td>
@@ -209,8 +227,11 @@
 
       <!-- Peers -->
       <section class="bg-gray-800 border border-gray-700 rounded-2xl p-5">
-        <h2 class="font-semibold text-white mb-1">Related tickers</h2>
-        <p class="text-xs text-gray-500 mb-3">
+        <h2 class="font-semibold text-white mb-1">{{ data.peerBasis === 'gics' ? 'Peers' : 'Related tickers' }}</h2>
+        <p v-if="data.peerBasis === 'gics'" class="text-xs text-gray-500 mb-3">
+          Other S&amp;P 500 companies in the same GICS sub-industry — an actual peer group.
+        </p>
+        <p v-else class="text-xs text-gray-500 mb-3">
           What people viewing {{ symbol }} also look at, per Yahoo. That is co-viewing rather than a
           curated peer group, so an unrelated name can appear — use the box above to jump to any ticker.
         </p>
@@ -228,7 +249,8 @@
       </section>
 
       <p class="text-center text-xs text-gray-600 mt-6">
-        Fundamentals from Alpha Vantage, stored {{ data.ageHours }}h ago · related tickers from Yahoo
+        {{ data.financialsSource === 'edgar' ? 'Statements as filed with the SEC (EDGAR)' : 'Statements from Alpha Vantage' }} ·
+        ratios from Alpha Vantage, stored {{ data.ageHours }}h ago
         <button class="text-blue-400 hover:text-blue-300 ml-2" :disabled="refreshing" @click="forceRefresh">
           {{ refreshing ? 'refreshing…' : 'refresh now' }}
         </button>
@@ -261,6 +283,16 @@ const error = ref<string | null>(null)
 const detail = ref<string | null>(null)
 const search = ref('')
 const expanded = ref(false)
+const allIncome = ref(false)
+const allBalance = ref(false)
+
+/** A long series is useful to have and unreadable to dump; show a window. */
+const shownIncome = computed(() =>
+  allIncome.value ? data.value.incomeQuarterly : (data.value?.incomeQuarterly ?? []).slice(0, 12),
+)
+const shownBalance = computed(() =>
+  allBalance.value ? data.value.balanceSheetQuarterly : (data.value?.balanceSheetQuarterly ?? []).slice(0, 12),
+)
 
 async function load() {
   if (!symbol.value) return

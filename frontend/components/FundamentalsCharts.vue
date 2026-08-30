@@ -58,8 +58,16 @@ const AQUA = '#199e70'
 const INK = '#9ca3af'      // axis and tick text — never a series colour
 const GRID = 'rgba(148, 163, 184, 0.12)' // recessive: present, not competing
 
-/** Tables read newest-first; a time axis has to read oldest-first. */
-const chrono = (rows: any[]) => [...(rows ?? [])].reverse()
+/**
+ * Newest-first in, oldest-first out — a time axis has to run forwards.
+ *
+ * Also capped: EDGAR returns close to seventy quarters for a long-listed
+ * company, and seventy bars in a 200px panel is a texture, not a chart. The
+ * most recent `limit` quarters are the ones anyone reads; the tables below
+ * carry the rest.
+ */
+const chrono = (rows: any[], limit = 16) =>
+  [...(rows ?? [])].slice(0, limit).reverse()
 
 /** "2026-06-30" → "Jun '26" — enough to place the quarter without crowding. */
 function quarterLabel(d: string) {
@@ -122,7 +130,7 @@ const charts = computed(() => {
     // a percentage and gets its own chart rather than a second y-scale.
     out.push({
       title: 'Revenue and net income',
-      subtitle: 'Per quarter, in billions of dollars',
+      subtitle: `Last ${inc.length} quarters, in billions of dollars`,
       type: 'bar',
       series: [{ label: 'Revenue', color: BLUE }, { label: 'Net income', color: ORANGE }],
       data: {
@@ -190,7 +198,7 @@ const charts = computed(() => {
     // so stacking them would double-count the total.
     out.push({
       title: 'Balance sheet',
-      subtitle: 'Assets, liabilities and equity per quarter, in billions',
+      subtitle: `Last ${bal.length} quarters, in billions of dollars`,
       type: 'bar',
       series: [
         { label: 'Total assets', color: BLUE },

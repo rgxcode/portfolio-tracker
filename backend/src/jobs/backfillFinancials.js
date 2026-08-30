@@ -55,9 +55,20 @@ async function main() {
     const missing = requested.filter(r => !members.some(m => m._id === r))
     if (missing.length) log(`Not in the stored index, skipping: ${missing.join(', ')}`)
   } else {
-    // Refresh membership first so the CIK for a recent addition is present.
-    if ((await Constituent.estimatedDocumentCount()) === 0) await refreshConstituents()
+    // Refresh when the list is empty, and also when nothing carries a CIK:
+    // membership stored before CIKs were captured looks complete but is
+    // unusable here, and silently matching nothing is worse than a re-fetch.
+    const withCik = await Constituent.countDocuments({ cik: { $ne: null } })
+    if (withCik === 0) {
+      log('No stored CIKs — refreshing the membership list first.')
+      await refreshConstituents()
+    }
     members = await Constituent.find({ cik: { $ne: null } }).lean()
+  }
+
+  if (members.length === 0) {
+    // Exiting 0 here once made a run that did nothing look like a success.
+    throw new Error('no companies with a CIK to load — refusing to report success')
   }
 
   log(`Loading financial history for ${members.length} companies from SEC EDGAR`)

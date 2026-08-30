@@ -2,6 +2,7 @@ import { Router } from 'express'
 import auth from '../middleware/auth.js'
 import { refreshFundamentals, loadFundamentals } from '../jobs/fundamentals.js'
 import { loadSnapshot, STANDARD } from '../jobs/snapshotStore.js'
+import { loadFinancials } from '../jobs/edgar.js'
 
 const router = Router()
 
@@ -48,6 +49,44 @@ function refreshOnce(symbol) {
   return p
 }
 
+/**
+ * Reshape EDGAR's quarters into the same field names the metered provider uses.
+ *
+ * The page already renders that shape, and EDGAR is the better source of the
+ * same facts — deeper history, filed rather than resold. Normalising here means
+ * the page gets seventeen years instead of eight quarters without knowing where
+ * the numbers came from.
+ */
+function fromEdgar(quarters) {
+  return {
+    income: quarters
+      .filter(q => q.revenue != null || q.netIncome != null)
+      .map(q => ({
+        fiscalDateEnding: q.end,
+        totalRevenue: q.revenue ?? null,
+        grossProfit: q.grossProfit ?? null,
+        operatingIncome: q.operatingIncome ?? null,
+        netIncome: q.netIncome ?? null,
+        researchAndDevelopment: q.researchAndDevelopment ?? null,
+        // True where the company never filed the quarter alone and it was
+        // computed as the year minus the three that were filed.
+        derived: q.derived === true,
+      })),
+    balance: quarters
+      .filter(q => q.assets != null || q.equity != null)
+      .map(q => ({
+        fiscalDateEnding: q.end,
+        totalAssets: q.assets ?? null,
+        totalLiabilities: q.liabilities ?? null,
+        totalShareholderEquity: q.equity ?? null,
+        cashAndCashEquivalents: q.cash ?? null,
+        totalCurrentAssets: null,
+        totalCurrentLiabilities: null,
+        longTermDebt: null,
+      })),
+  }
+}
+
 /** The live price for this ticker, so the page can show it without a second call. */
 async function currentQuote(symbol) {
   const snap = await loadSnapshot(STANDARD)
@@ -90,8 +129,27 @@ router.get('/:symbol', async (req, res, next) => {
 
     const quote = await currentQuote(symbol)
 
+    // EDGAR wins where we have it: same facts, filed at source, far more of them.
+    const filings = await loadFinancials(symbol)
+    let statements = null
+    if (filings?.quarters?.length) {
+      const shaped = fromEdgar(filings.quarters)
+      if (shaped.income.length > 0) {
+        statements = {
+          financialsSource: 'edgar',
+          entityName: filings.entityName,
+          filingsFetchedAt: filings.fetchedAt,
+          incomeQuarterly: shaped.income,
+          balanceSheetQuarterly: shaped.balance.length ? shaped.balance : doc.balanceSheetQuarterly,
+        }
+      }
+    }
+
     res.json({
       ...doc,
+      // Earnings-versus-estimate stays with the metered provider: EDGAR carries
+      // what was reported, never what was expected.
+      ...(statements ?? { financialsSource: 'alphavantage' }),
       symbol: doc._id,
       ageHours: +(((Date.now() - new Date(doc.fetchedAt).getTime()) / 3600e3)).toFixed(1),
       quote,
