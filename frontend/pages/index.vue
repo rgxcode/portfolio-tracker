@@ -280,15 +280,23 @@
                 class="border-b border-gray-700/50 last:border-0 hover:bg-gray-700/30 transition-colors"
               >
                 <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
+                  <NuxtLink
+                    :to="{ path: '/asset', query: { symbol: asset.symbol.toUpperCase() } }"
+                    class="flex items-center gap-2 group"
+                  >
                     <div
                       class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                       :style="{ backgroundColor: iconColor(asset.symbol), color: '#fff' }"
                     >
                       {{ asset.symbol.slice(0, 2).toUpperCase() }}
                     </div>
-                    <span class="text-white font-semibold">{{ asset.symbol.toUpperCase() }}</span>
-                  </div>
+                    <span class="text-white font-semibold group-hover:text-blue-400 transition-colors">
+                      {{ asset.symbol.toUpperCase() }}
+                    </span>
+                    <svg class="w-3.5 h-3.5 text-gray-600 group-hover:text-blue-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </NuxtLink>
                 </td>
                 <td class="text-right text-gray-300 px-4 py-3">{{ asset.quantity }}</td>
                 <td class="text-right text-gray-300 px-4 py-3">{{ formatCurrency(convert(asset.purchasePrice * asset.quantity)) }}</td>

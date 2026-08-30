@@ -8,6 +8,7 @@ import authRouter from './routes/auth.js'
 import assetsRouter from './routes/assets.js'
 import pricesRouter from './routes/prices.js'
 import adminRouter from './routes/admin.js'
+import fundamentalsRouter from './routes/fundamentals.js'
 
 // Load .env manually (avoid dotenv dependency)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -43,6 +44,7 @@ app.use('/api/auth', authRouter)
 app.use('/api/assets', assetsRouter)
 app.use('/api/prices', pricesRouter)
 app.use('/api/admin', adminRouter)
+app.use('/api/fundamentals', fundamentalsRouter)
 
 // Health check
 app.get('/api/health', (_req, res) => {
