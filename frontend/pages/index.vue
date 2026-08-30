@@ -327,6 +327,8 @@
           </table>
         </div>
       </div>
+      <!-- LLM read of the holdings, below the portfolio itself -->
+      <PortfolioInsights />
     </template>
   </div>
 </template>

@@ -10,6 +10,7 @@ import pricesRouter from './routes/prices.js'
 import adminRouter from './routes/admin.js'
 import fundamentalsRouter from './routes/fundamentals.js'
 import compareRouter from './routes/compare.js'
+import insightsRouter from './routes/insights.js'
 
 // Load .env manually (avoid dotenv dependency)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -47,6 +48,7 @@ app.use('/api/prices', pricesRouter)
 app.use('/api/admin', adminRouter)
 app.use('/api/fundamentals', fundamentalsRouter)
 app.use('/api/compare', compareRouter)
+app.use('/api/insights', insightsRouter)
 
 // Health check
 app.get('/api/health', (_req, res) => {

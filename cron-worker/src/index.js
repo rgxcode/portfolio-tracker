@@ -14,8 +14,17 @@
 const OWNER = 'rgxcode'
 const REPO = 'portfolio-tracker'
 
-/** Workflows to dispatch, by file name. */
+/** Workflows to dispatch on every tick. */
 const WORKFLOWS = ['fetch-prices.yml', 'llm-prices.yml']
+
+/**
+ * Workflows that do not need every tick. Published commentary does not turn
+ * over hourly, and a runner spun up every five minutes to decide it has nothing
+ * to do is waste — so these fire on matching hours only.
+ */
+const PERIODIC = [
+  { workflow: 'insights.yml', hours: [6, 18] },
+]
 
 async function dispatch(workflow, token) {
   const res = await fetch(
@@ -47,9 +56,16 @@ async function runAll(env) {
     return { ok: false, error: 'missing token' }
   }
 
+  // The cron fires every five minutes, so a periodic workflow is dispatched in
+  // the first tick of its hour and skipped for the rest.
+  const now = new Date()
+  const due = PERIODIC
+    .filter(p => p.hours.includes(now.getUTCHours()) && now.getUTCMinutes() < 5)
+    .map(p => p.workflow)
+
   // Independent workflows, so fire them together rather than in sequence.
   const results = await Promise.all(
-    WORKFLOWS.map(async w => [w, await dispatch(w, env.GITHUB_TOKEN)]),
+    [...WORKFLOWS, ...due].map(async w => [w, await dispatch(w, env.GITHUB_TOKEN)]),
   )
   const summary = Object.fromEntries(results)
   console.log('dispatched:', JSON.stringify(summary))

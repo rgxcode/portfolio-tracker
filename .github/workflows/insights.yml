@@ -1,0 +1,43 @@
+name: Portfolio insights
+
+# Writes an LLM read of every holding, grounded in articles fetched first.
+#
+# The model never sees a URL it could echo back: retrieval is mechanical, and
+# citations are resolved by index into the list we supplied, so a fabricated
+# link cannot reach the page.
+#
+# Twice a day is plenty — published commentary does not turn over hourly, and
+# the job skips anything refreshed within INSIGHTS_FRESH_HOURS anyway.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6,18 * * *'
+
+concurrency:
+  group: insights
+  cancel-in-progress: false
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci --omit=dev
+
+      - name: Analyse holdings
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: node src/jobs/insights.js
