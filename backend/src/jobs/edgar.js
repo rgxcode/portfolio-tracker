@@ -47,6 +47,18 @@ const CONCEPTS = {
   liabilities: ['Liabilities'],
   equity: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
   cash: ['CashAndCashEquivalentsAtCarryingValue'],
+  /**
+   * Share count, needed for market cap and every per-share ratio.
+   *
+   * The cover-page figure (dei) is the most current and the one a market cap
+   * should use; the balance-sheet figure is the fallback for filings that omit
+   * it. Weighted-average counts are deliberately not used — they describe a
+   * period for EPS purposes, not how many shares exist now.
+   */
+  sharesOutstanding: [
+    'EntityCommonStockSharesOutstanding',
+    'CommonStockSharesOutstanding',
+  ],
 }
 
 const DURATION_METRICS = new Set([
@@ -213,7 +225,15 @@ function deriveFourthQuarters(gaap, series) {
 
 /** Turn one company's facts into a newest-first list of quarters. */
 export function buildQuarters(companyFacts) {
-  const gaap = companyFacts?.facts?.['us-gaap'] ?? {}
+  /**
+   * Share counts are filed under `dei` (document and entity information), not
+   * `us-gaap`. The two namespaces use distinct concept names, so a flat merge
+   * is safe and keeps every lookup below in one place.
+   */
+  const gaap = {
+    ...(companyFacts?.facts?.['us-gaap'] ?? {}),
+    ...(companyFacts?.facts?.dei ?? {}),
+  }
 
   const series = {}
   for (const [metric, names] of Object.entries(CONCEPTS)) {

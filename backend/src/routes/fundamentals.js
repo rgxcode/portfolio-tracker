@@ -4,6 +4,7 @@ import { refreshFundamentals, loadFundamentals } from '../jobs/fundamentals.js'
 import { loadSnapshot, STANDARD } from '../jobs/snapshotStore.js'
 import { loadFinancials } from '../jobs/edgar.js'
 import Constituent from '../models/Constituent.js'
+import { computeMetrics, priceRange52w, PROVIDER_ONLY } from '../jobs/metrics.js'
 
 const router = Router()
 
@@ -145,11 +146,37 @@ router.get('/:symbol', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid symbol' })
     }
 
+    // Filings first: they cover every ratio that looks backwards, cost nothing,
+    // and decide whether the metered provider needs troubling at all.
+    const filings = await loadFinancials(symbol)
+    const quote = await currentQuote(symbol)
+
     let doc = await loadFundamentals(symbol)
     const age = doc ? Date.now() - new Date(doc.fetchedAt).getTime() : Infinity
     const ttl = doc?.partial ? PARTIAL_TTL_MS : TTL_MS
 
-    if (!doc) {
+    /**
+     * Only spend a request when filings cannot answer.
+     *
+     * With reported financials and our own prices, everything except the
+     * forward-looking fields is arithmetic. Fetching anyway would burn a daily
+     * budget of 25 across all users on figures we can derive for free — which
+     * was the app's real ceiling.
+     */
+    const canCompute = Boolean(filings?.quarters?.length)
+
+    if (!doc && canCompute) {
+      // Nothing stored and nothing to ask for: serve the computed view.
+      doc = {
+        _id: symbol,
+        metrics: {},
+        fetchedAt: new Date(),
+        balanceSheetQuarterly: [],
+        incomeQuarterly: [],
+        earningsQuarterly: [],
+        peers: [],
+      }
+    } else if (!doc) {
       // Nothing stored: the caller has to wait, since there is nothing to show.
       try {
         await refreshOnce(symbol)
@@ -163,16 +190,13 @@ router.get('/:symbol', async (req, res, next) => {
           detail: err.message,
         })
       }
-    } else if (age > ttl) {
+    } else if (age > ttl && !canCompute) {
       // Stale but usable: answer immediately and refresh behind the response,
       // so a quarterly update never makes someone wait.
       refreshOnce(symbol).catch(err => console.error('fundamentals refresh:', err.message))
     }
 
-    const quote = await currentQuote(symbol)
-
     // EDGAR wins where we have it: same facts, filed at source, far more of them.
-    const filings = await loadFinancials(symbol)
     let statements = null
     if (filings?.quarters?.length) {
       const shaped = fromEdgar(filings.quarters)
@@ -205,13 +229,32 @@ router.get('/:symbol', async (req, res, next) => {
      * page that said statements were unavailable directly above the statements.
      * Ratios come from the metered provider; statements come from EDGAR.
      */
+    /**
+     * Computed ratios win over fetched ones: they are derived from filings and
+     * the current price, so they cannot go stale the way a value cached for a
+     * week does. The provider keeps only the fields nothing filed can supply.
+     */
+    const computed = computeMetrics(filings?.quarters ?? [], quote?.price ?? null)
+    const range = canCompute ? await priceRange52w(symbol) : {}
+
+    const providerMetrics = {}
+    for (const k of PROVIDER_ONLY) {
+      if (doc.metrics?.[k] != null) providerMetrics[k] = doc.metrics[k]
+    }
+
+    const metrics = { ...doc.metrics, ...computed, ...range, ...providerMetrics }
+
     const statementsAvailable = Boolean(
       statements || doc.incomeQuarterly?.length || doc.balanceSheetQuarterly?.length,
     )
-    const metricsAvailable = Object.values(doc.metrics ?? {}).some(v => v != null)
+    const metricsAvailable = Object.values(metrics).some(v => v != null)
 
     res.json({
       ...doc,
+      metrics,
+      // So the page can say where a number came from rather than implying one
+      // source for all of them.
+      metricsSource: canCompute ? 'computed' : 'alphavantage',
       // Earnings-versus-estimate stays with the metered provider: EDGAR carries
       // what was reported, never what was expected.
       ...(statements ?? { financialsSource: 'alphavantage' }),
