@@ -35,6 +35,8 @@ const fundamentalsSchema = new mongoose.Schema(
 
     /** Related tickers, each one a symbol this API can also serve. */
     peers: { type: [String], default: () => [] },
+    /** 'gics' — same index sub-industry; 'coviewed' — what others also viewed. */
+    peerBasis: String,
 
     /** Which upstreams actually answered, so a partial refresh is visible. */
     sources: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },

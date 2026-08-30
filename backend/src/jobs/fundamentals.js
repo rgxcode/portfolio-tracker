@@ -9,6 +9,7 @@
 
 import Fundamentals from '../models/Fundamentals.js'
 import { consume } from './rateBudget.js'
+import { sectorPeers } from './sp500.js'
 import { formatCET } from './marketHours.js'
 
 const AV = 'https://www.alphavantage.co/query'
@@ -143,14 +144,28 @@ export async function refreshFundamentals(symbol) {
   const sources = {}
   const doc = { _id: ticker, fetchedAt: new Date() }
 
-  // Peers first, deliberately. Yahoo needs no key and no quota, so when the
-  // metered provider is exhausted this still gives the page something real to
-  // show rather than an error and nothing else.
+  // Peers first, deliberately. Neither source is metered, so when the
+  // fundamentals provider is exhausted this still gives the page something real
+  // to show rather than an error and nothing else.
+  //
+  // The index classification is preferred where we have it: it is an actual
+  // peer group. Yahoo's list is what other people also viewed, which for a
+  // chipmaker has returned a streaming service — fine as a fallback for
+  // anything outside the index, misleading as the primary answer.
   try {
-    doc.peers = await fetchPeers(ticker)
-    sources.peers = 'ok'
+    const classified = await sectorPeers(ticker)
+    if (classified.length > 0) {
+      doc.peers = classified
+      doc.peerBasis = 'gics'
+      sources.peers = 'ok'
+    } else {
+      doc.peers = await fetchPeers(ticker)
+      doc.peerBasis = 'coviewed'
+      sources.peers = 'ok'
+    }
   } catch (err) {
     doc.peers = []
+    doc.peerBasis = null
     sources.peers = err.message
   }
 

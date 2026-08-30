@@ -12,6 +12,11 @@
  *
  *   node src/jobs/backfill.js              # held assets + tracked coins
  *   node src/jobs/backfill.js BTC ETH AMD  # only these symbols
+ *   node src/jobs/backfill.js --sp500      # every S&P 500 member, no crypto
+ *
+ * --sp500 is a deliberate operator action, not automatic traffic: it makes ~500
+ * requests over roughly ten minutes and is therefore paced by STOCK_STAGGER_MS
+ * rather than counted against the shared daily budget the scheduled job uses.
  */
 
 import { readFileSync } from 'fs'
@@ -22,6 +27,7 @@ import PriceHistory from '../models/PriceHistory.js'
 import { COIN_IDS } from './coins.js'
 import { formatCET } from './marketHours.js'
 import { resolveStockSymbols } from './stocks.js'
+import { refreshConstituents } from './sp500.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -44,6 +50,9 @@ const MONGO_URL =
 const CRYPTO_DAYS = 365
 const STOCK_RANGE = '5y'
 const STAGGER_MS = 2500 // CoinGecko's free tier allows ~30 calls/min
+// Yahoo publishes no limit; this is slow enough to stay unobtrusive while still
+// finishing the whole index in about ten minutes.
+const STOCK_STAGGER_MS = 1000
 
 const delay = ms => new Promise(r => setTimeout(r, ms))
 const log = (...a) => console.log(`[${formatCET()}]`, ...a)
@@ -110,11 +119,19 @@ async function main() {
   await mongoose.connect(MONGO_URL, { serverSelectionTimeoutMS: 10000 })
   await PriceHistory.syncIndexes()
 
-  const requested = process.argv.slice(2).map(s => s.toUpperCase())
+  const args = process.argv.slice(2)
+  const wantSp500 = args.includes('--sp500')
+  const requested = args.filter(a => !a.startsWith('--')).map(s => s.toUpperCase())
 
   let cryptoSymbols
   let stockSymbols
-  if (requested.length > 0) {
+  if (wantSp500) {
+    // Refresh membership first: backfilling a list that is months out of date
+    // would quietly miss recent additions.
+    stockSymbols = await refreshConstituents()
+    cryptoSymbols = []
+    log(`S&P 500 mode: ${stockSymbols.length} members`)
+  } else if (requested.length > 0) {
     cryptoSymbols = requested.filter(s => COIN_IDS[s])
     stockSymbols = requested.filter(s => !COIN_IDS[s])
   } else {
@@ -139,15 +156,20 @@ async function main() {
     }
   }
 
-  for (const symbol of stockSymbols) {
-    await delay(1500)
+  for (const [i, symbol] of stockSymbols.entries()) {
+    await delay(STOCK_STAGGER_MS)
     try {
       const n = await backfillStock(symbol)
       total += n
-      log(`  ${symbol}: +${n} daily points`)
+      // Five hundred success lines bury the failures that matter; in bulk mode
+      // report progress periodically and keep per-symbol output for failures.
+      if (!wantSp500) log(`  ${symbol}: +${n} daily points`)
     } catch (err) {
       failures.push(`${symbol} (${err.message})`)
       log(`  ${symbol}: FAILED — ${err.message}`)
+    }
+    if (wantSp500 && (i + 1) % 25 === 0) {
+      log(`  ${i + 1}/${stockSymbols.length} symbols · ${total} points so far`)
     }
   }
 

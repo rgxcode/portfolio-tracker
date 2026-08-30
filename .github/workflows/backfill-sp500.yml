@@ -1,0 +1,42 @@
+name: Backfill S&P 500 history
+
+# Seeds five years of daily closes for every S&P 500 member, and refreshes the
+# membership list with each company's GICS classification.
+#
+# Manual only. It makes ~500 requests over roughly ten minutes and adds ~630,000
+# points to the database — an operator action, not something to run on a timer.
+# Safe to repeat: every write is an upsert keyed on (symbol, ts), so a re-run
+# fills gaps and adds new sessions rather than duplicating anything.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: backfill-sp500
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    # Paced at one request per second, so the floor is ~9 minutes; the rest is
+    # headroom for slow writes to a shared-tier database.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci --omit=dev
+
+      - name: Backfill every S&P 500 member
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: node src/jobs/backfill.js --sp500
