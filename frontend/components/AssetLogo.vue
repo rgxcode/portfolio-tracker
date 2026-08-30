@@ -1,6 +1,7 @@
 <template>
   <span
-    class="rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-gray-700"
+    class="overflow-hidden shrink-0 flex items-center justify-center bg-gray-700"
+    :class="shape"
     :style="{ width: px, height: px }"
   >
     <img
@@ -10,6 +11,7 @@
       loading="lazy"
       referrerpolicy="no-referrer"
       class="w-full h-full object-contain bg-white"
+      :style="{ padding: pad }"
       @error="failed = true"
     />
     <!-- Initials on a colour derived from the ticker, so a company without a
@@ -44,6 +46,20 @@ const props = withDefaults(defineProps<{
 const failed = ref(false)
 
 const px = computed(() => `${props.size}px`)
+
+/**
+ * Coin logos are drawn as round badges and fill a circle correctly. Equity
+ * logos are square artwork that reaches the edge of its frame, so a circular
+ * crop cuts the corners off — Tesla and AMD both lost part of their mark. A
+ * rounded square keeps the whole logo and still reads as an avatar.
+ */
+const shape = computed(() => (props.type === 'crypto' ? 'rounded-full' : 'rounded-lg'))
+
+/**
+ * Breathing room so artwork never touches the edge. Only for equities: a coin
+ * badge is designed to fill its circle, and padding it would shrink it oddly.
+ */
+const pad = computed(() => (props.type === 'crypto' ? '0px' : `${Math.max(2, Math.round(props.size * 0.1))}px`))
 const fontSize = computed(() => `${Math.max(9, Math.round(props.size * 0.36))}px`)
 
 const src = computed(() => {

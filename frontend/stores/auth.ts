@@ -8,6 +8,9 @@ interface AuthUser {
   // independently on every admin route.
   isAdmin?: boolean
   name?: string | null
+  /** Collected at sign-up for password accounts; null for provider accounts. */
+  firstName?: string | null
+  lastName?: string | null
   avatarUrl?: string | null
   /** False for accounts created through a provider — nothing to change. */
   hasPassword?: boolean
@@ -35,7 +38,7 @@ export const useAuthStore = defineStore('auth', {
   },
 
   actions: {
-    async signup(email: string, password: string) {
+    async signup(email: string, password: string, firstName: string, lastName: string) {
       this.loading = true
       this.error = null
       try {
@@ -44,7 +47,7 @@ export const useAuthStore = defineStore('auth', {
           `${config.public.apiBaseUrl}/api/auth/signup`,
           {
             method: 'POST',
-            body: { email, password },
+            body: { email, password, firstName, lastName },
           },
         )
         this.token = data.token

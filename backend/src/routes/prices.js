@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import PriceHistory from '../models/PriceHistory.js'
 import { loadSnapshot, STANDARD, LLM } from '../jobs/snapshotStore.js'
+import Coin from '../models/Coin.js'
 import { refreshIfStale, refresherStatus } from '../agents/llmRefresher.js'
 
 const router = Router()
@@ -84,12 +85,29 @@ router.get('/llm', async (_req, res, next) => {
         hint: 'Run: node src/agents/opencodePriceAgent.js --once',
       })
     }
+    /**
+     * A logo belongs to the coin, not to whichever source priced it. The agent
+     * writes prices only, so without this the same Bitcoin showed its logo on
+     * one tab and initials on the other.
+     */
+    const symbols = Object.keys(data.prices ?? {})
+    const logos = Object.fromEntries(
+      (await Coin.find({ _id: { $in: symbols } }, { image: 1 }).lean())
+        .map(c => [c._id, c.image]),
+    )
+    const crypto = Object.fromEntries(
+      Object.entries(data.prices ?? {}).map(([sym, quote]) => [
+        sym,
+        { ...quote, image: quote.image ?? logos[sym] ?? null },
+      ]),
+    )
+
     res.json({
       ...data,
       ageMinutes: ageMinutes(data.updatedAt),
       // The LLM agent only covers crypto; keep the key so clients can treat
       // both sources identically.
-      crypto: data.prices,
+      crypto,
       stocks: {},
     })
   } catch (err) {

@@ -130,7 +130,7 @@ portfilo-tracker/
 │   └── default.vue            # Navigation shell layout
 │
 ├── pages/
-│   ├── index.vue              # Dashboard (charts + holdings overview)
+│   ├── index.vue              # Home (charts + holdings overview)
 │   └── assets.vue             # Asset management (add / remove)
 │
 └── stores/
@@ -141,7 +141,7 @@ portfilo-tracker/
 
 ## Adding an Asset
 
-1. Navigate to **Assets** in the top navigation bar, or click **+ Add Asset** on the dashboard.
+1. Navigate to **Assets** in the top navigation bar, or click **+ Add Asset** on the home page.
 2. Select the asset type: **Crypto** or **Stock**.
 3. Enter the **symbol** (e.g. `BTC`, `ETH`, `AAPL`, `TSLA`).
 4. Enter the **name**, **quantity**, and **purchase price**.

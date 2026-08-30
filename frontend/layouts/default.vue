@@ -19,7 +19,7 @@
                 class="px-3 py-2 rounded-lg text-sm font-medium transition-colors"
                 :class="$route.path === '/' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'"
               >
-                Dashboard
+                Home
               </NuxtLink>
               <NuxtLink
                 to="/assets"

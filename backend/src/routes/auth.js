@@ -24,6 +24,8 @@ function shapeUser(user) {
     email: user.email,
     isAdmin: isAdminEmail(user.email),
     name: user.name ?? null,
+    firstName: user.firstName ?? null,
+    lastName: user.lastName ?? null,
     avatarUrl: user.avatarUrl ?? null,
     // Lets the account page hide a password form that could not work.
     hasPassword: Boolean(user.passwordHash),
@@ -131,9 +133,15 @@ router.get('/google/callback', async (req, res, next) => {
 router.post('/signup', async (req, res, next) => {
   try {
     const { email, password } = req.body
+    // Trimmed before the emptiness check, so a field of spaces is not a name.
+    const firstName = String(req.body?.firstName ?? '').trim()
+    const lastName = String(req.body?.lastName ?? '').trim()
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' })
+    }
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'First name and last name are required' })
     }
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' })
@@ -145,7 +153,15 @@ router.post('/signup', async (req, res, next) => {
     }
 
     const passwordHash = await User.hashPassword(password)
-    const user = await User.create({ email: email.toLowerCase().trim(), passwordHash })
+    const user = await User.create({
+      email: email.toLowerCase().trim(),
+      passwordHash,
+      firstName,
+      lastName,
+      // Kept in step with the halves so the avatar and menu have one field to
+      // read, whichever way the account was created.
+      name: `${firstName} ${lastName}`,
+    })
 
     const token = signToken(user._id)
     res.status(201).json({ token, user: shapeUser(user) })

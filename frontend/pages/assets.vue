@@ -9,7 +9,7 @@
         to="/"
         class="text-gray-400 hover:text-white text-sm flex items-center gap-1 transition-colors"
       >
-        ← Back to Dashboard
+        ← Back to Home
       </NuxtLink>
     </div>
 

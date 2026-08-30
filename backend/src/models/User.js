@@ -35,6 +35,15 @@ const userSchema = new mongoose.Schema(
     /** Whether some provider has vouched for the address. Gates auto-linking. */
     emailVerified: { type: Boolean, default: false },
 
+    /**
+     * Collected at sign-up for password accounts and required there. Absent on
+     * accounts created through a provider, which only hand back a single
+     * display name — so nothing may assume both halves are present.
+     */
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
+
+    /** Display name. Composed from the two halves where we collected them. */
     name: String,
     avatarUrl: String,
   },

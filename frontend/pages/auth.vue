@@ -54,6 +54,33 @@
         </template>
 
         <form @submit.prevent="handleSubmit" class="space-y-4">
+          <!-- Signup only, and rendered rather than hidden: a `required` field
+               left in the DOM would block the login form from submitting. -->
+          <div v-if="mode === 'signup'" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">First name</label>
+              <input
+                v-model="firstName"
+                type="text"
+                required
+                autocomplete="given-name"
+                placeholder="Ada"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Last name</label>
+              <input
+                v-model="lastName"
+                type="text"
+                required
+                autocomplete="family-name"
+                placeholder="Lovelace"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-1">Email</label>
             <input
@@ -108,6 +135,8 @@ const authStore = useAuthStore()
 const mode = ref<'login' | 'signup'>('login')
 const email = ref('')
 const password = ref('')
+const firstName = ref('')
+const lastName = ref('')
 
 const config = useRuntimeConfig()
 const route = useRoute()
@@ -152,7 +181,15 @@ onMounted(async () => {
 async function handleSubmit() {
   try {
     if (mode.value === 'signup') {
-      await authStore.signup(email.value, password.value)
+      // The browser's `required` only rejects an empty field, so whitespace is
+      // trimmed here too rather than left for the server to bounce back.
+      if (!firstName.value.trim() || !lastName.value.trim()) {
+        authStore.error = 'First name and last name are required'
+        return
+      }
+      await authStore.signup(
+        email.value, password.value, firstName.value.trim(), lastName.value.trim(),
+      )
     } else {
       await authStore.login(email.value, password.value)
     }

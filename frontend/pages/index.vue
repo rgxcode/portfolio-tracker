@@ -657,5 +657,5 @@ onMounted(async () => {
 // Reload chart when tab changes
 watch(activeTab, () => loadChart())
 
-useHead({ title: 'Dashboard – Portfolio Tracker' })
+useHead({ title: 'Home – Portfolio Tracker' })
 </script>
