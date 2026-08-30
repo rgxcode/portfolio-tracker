@@ -61,6 +61,9 @@ export function useMarketData() {
   /** Window status from the last snapshot, for display in the UI. */
   const stockWindow = useState<PriceSnapshot['stockWindow'] | null>('stockWindow', () => null)
   const snapshotCET = useState<string | null>('snapshotCET', () => null)
+  // The same instant as snapshotCET, kept machine-readable so the UI can show
+  // how old the data is rather than only when it was taken.
+  const snapshotAt = useState<string | null>('snapshotAt', () => null)
   /** Coins the backend actually tracks — the list the Add Asset form validates against. */
   const supportedCrypto = useState<string[]>('supportedCrypto', () => [])
 
@@ -113,6 +116,7 @@ export function useMarketData() {
     // rather than blanking the label when the user toggles.
     if (data.stockWindow) stockWindow.value = data.stockWindow
     snapshotCET.value = data.updatedAtCET
+    snapshotAt.value = data.updatedAt
     if (priceSource.value === 'standard') {
       supportedCrypto.value = Object.keys(data.crypto ?? {})
     }
@@ -170,6 +174,7 @@ export function useMarketData() {
     supportedCrypto,
     stockWindow,
     snapshotCET,
+    snapshotAt,
     priceSource,
     setPriceSource,
     loadSourcePreference,

@@ -77,7 +77,7 @@
 
         <!-- Provenance for the LLM feed: when the snapshot was written, and by which model -->
         <p v-if="priceSource === 'llm' && llmMeta" class="text-[10px] text-emerald-500/80 mt-0.5">
-          Read from the web at {{ llmMeta.at }} · {{ llmMeta.model }} · polled {{ pollCount }}×
+          Read from the web at {{ llmMeta.at }} · {{ llmMeta.model }} · {{ snapshotAge }}
         </p>
         <div class="flex items-baseline gap-3 mt-1">
           <span class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
@@ -317,27 +317,41 @@ definePageMeta({ middleware: 'auth' })
 
 const store = usePortfolioStore()
 const {
-  refreshAllPrices, pollPrices, stockWindow, snapshotCET,
+  refreshAllPrices, pollPrices, stockWindow, snapshotCET, snapshotAt,
   priceSource, setPriceSource, loadSourcePreference,
 } = useMarketData()
 
 /**
- * The LLM agent rewrites its snapshot roughly every 8s, so the dashboard polls
- * at the same cadence while that source is selected. The API source is only
- * rewritten every 5 minutes, so polling it would be wasted requests.
+ * The LLM snapshot is written by a scheduled job every ~5 minutes, so polling
+ * every few seconds only produced identical responses. 30s is frequent enough
+ * that a new snapshot shows up promptly without hammering a sleeping free
+ * instance. The API source is on the same rhythm and is not polled at all.
  */
-const LLM_POLL_MS = 8000
+const LLM_POLL_MS = 30000
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-// Visible proof the feed is alive. The LLM price can sit unchanged for 30-45s,
-// so without these a working poll looks identical to a broken one.
-const pollCount = ref(0)
+// Visible proof the feed is alive. The price itself can sit unchanged for
+// minutes, so without this a working poll looks identical to a broken one.
+// A count of polls is not that proof — it climbs whether or not the data ever
+// moves — so the label reports the snapshot's age instead.
 const pollPulse = ref(false)
+const now = ref(Date.now())
 const llmMeta = ref<{ at: string, model: string } | null>(null)
+
+/** "just now" / "3 min ago" — how old the stored snapshot actually is. */
+const snapshotAge = computed(() => {
+  if (!snapshotAt.value) return ''
+  const mins = Math.floor((now.value - new Date(snapshotAt.value).getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins === 1) return '1 min ago'
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.floor(mins / 60)
+  return hrs === 1 ? '1 hour ago' : `${hrs} hours ago`
+})
 
 async function pollTick() {
   await pollPrices()
-  pollCount.value++
+  now.value = Date.now()
   pollPulse.value = true
   setTimeout(() => { pollPulse.value = false }, 400)
 
