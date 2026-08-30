@@ -24,6 +24,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const BACKEND_DIR = resolve(__dirname, '..', '..')
 const AGENT = resolve(__dirname, 'opencodePriceAgent.js')
 
+/**
+ * Off unless explicitly switched on, because it is not safe everywhere.
+ *
+ * The agent spawns `opencode`, which needs far more memory than a 512MB
+ * instance has left over. On Render it was OOM-killed and took the API process
+ * down with it — a broken login is a much worse outcome than a stale price. So
+ * a host has to opt in by setting LLM_REFRESH=on, which is fine on a
+ * workstation and deliberately absent in production.
+ */
+const ENABLED = process.env.LLM_REFRESH === 'on'
+
 /** Refresh once the stored snapshot is older than this. */
 const STALE_SEC = Number(process.env.LLM_STALE_SEC ?? 8)
 
@@ -74,6 +85,7 @@ function agentEnv() {
  * is never blocked, and the return value only says whether a run was started.
  */
 export function refreshIfStale(snapshot) {
+  if (!ENABLED) return false
   if (inFlight) return false
   if (Date.now() < cooldownUntil) return false
 
@@ -141,6 +153,7 @@ export function refresherStatus() {
   const binary = resolve(BACKEND_DIR, 'node_modules', '.bin', 'opencode')
   return {
     ...state,
+    enabled: ENABLED,
     inFlight,
     staleAfterSec: STALE_SEC,
     cooldownRemainingSec: Math.max(0, Math.round((cooldownUntil - Date.now()) / 1000)),
