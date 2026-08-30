@@ -1,0 +1,42 @@
+name: Backfill financial history
+
+# Loads reported quarterly financials for every S&P 500 member from SEC EDGAR:
+# revenue, net income, EPS, assets, liabilities and equity, back to each
+# company's first XBRL filing — typically 2009.
+#
+# EDGAR is free and unmetered, so unlike the fundamentals fetch this covers the
+# whole index in one run. Manual, and safe to repeat: each company's document is
+# replaced, so a re-run refreshes figures and picks up new quarters.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: backfill-financials
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci --omit=dev
+
+      - name: Load financial history from EDGAR
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          # SEC asks that automated clients identify themselves with a contact.
+          SEC_USER_AGENT: portfolio-tracker (ranajoy121@gmail.com)
+        run: node src/jobs/backfillFinancials.js

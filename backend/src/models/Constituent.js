@@ -20,6 +20,8 @@ const constituentSchema = new mongoose.Schema(
     subIndustry: String,
     headquarters: String,
     dateAdded: String,
+    /** Zero-padded ten-digit SEC identifier, the key for EDGAR's filings API. */
+    cik: String,
     updatedAt: { type: Date, required: true },
   },
   { versionKey: false },

@@ -58,6 +58,7 @@ export async function refreshConstituents() {
   const iSub = col('GICS Sub-Industry')
   const iHq = col('Headquarters Location')
   const iAdded = col('Date added')
+  const iCik = col('CIK')
   if (iSym === -1) throw new Error('constituents: no Symbol column')
 
   const now = new Date()
@@ -72,7 +73,10 @@ export async function refreshConstituents() {
         update: {
           $set: {
             name: r[iName], sector: r[iSector], subIndustry: r[iSub],
-            headquarters: r[iHq], dateAdded: r[iAdded], updatedAt: now,
+            headquarters: r[iHq], dateAdded: r[iAdded],
+            // EDGAR keys on a zero-padded ten-digit CIK; the CSV drops the padding.
+            cik: iCik !== -1 && r[iCik] ? String(r[iCik]).padStart(10, '0') : null,
+            updatedAt: now,
           },
         },
         upsert: true,
