@@ -137,6 +137,15 @@ router.get('/search', async (req, res, next) => {
     const q = String(req.query.q ?? '').trim()
     if (q.length < 1) return res.json({ results: [] })
 
+    /**
+     * Optional filter. The add-asset form already knows whether the user is
+     * entering a share or a coin, so offering both was noise — typing "CRO"
+     * under Crypto returned three equities above the coin.
+     */
+    const only = String(req.query.type ?? '').toLowerCase()
+    const wantStocks = only !== 'crypto'
+    const wantCrypto = only !== 'stock'
+
     // Escape the input: a stray "(" from a company name would otherwise throw,
     // and a "." would quietly match any character.
     const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -146,13 +155,14 @@ router.get('/search', async (req, res, next) => {
     // Crypto is searched alongside equities: the add-asset form uses this, and
     // a lookup that only knew about shares was why adding a coin meant typing
     // its name by hand and hoping the app recognised the ticker.
+    const none = Promise.resolve([])
     const [exact, byPrefix, byName, coinExact, coinPrefix, coinName] = await Promise.all([
-      Constituent.find({ _id: q.toUpperCase() }, { name: 1, sector: 1 }).lean(),
-      Constituent.find({ _id: starts }, { name: 1, sector: 1 }).limit(10).lean(),
-      Constituent.find({ name: contains }, { name: 1, sector: 1 }).limit(10).lean(),
-      Coin.find({ _id: q.toUpperCase() }, { name: 1, rank: 1 }).lean(),
-      Coin.find({ _id: starts }, { name: 1, rank: 1 }).limit(10).lean(),
-      Coin.find({ name: contains }, { name: 1, rank: 1 }).limit(10).lean(),
+      wantStocks ? Constituent.find({ _id: q.toUpperCase() }, { name: 1, sector: 1 }).lean() : none,
+      wantStocks ? Constituent.find({ _id: starts }, { name: 1, sector: 1 }).limit(10).lean() : none,
+      wantStocks ? Constituent.find({ name: contains }, { name: 1, sector: 1 }).limit(10).lean() : none,
+      wantCrypto ? Coin.find({ _id: q.toUpperCase() }, { name: 1, rank: 1 }).lean() : none,
+      wantCrypto ? Coin.find({ _id: starts }, { name: 1, rank: 1 }).limit(10).lean() : none,
+      wantCrypto ? Coin.find({ name: contains }, { name: 1, rank: 1 }).limit(10).lean() : none,
     ])
 
     const shapeStock = d => ({ symbol: d._id, name: d.name, sector: d.sector, type: 'stock' })

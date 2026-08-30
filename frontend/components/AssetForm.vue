@@ -209,8 +209,10 @@ async function lookupSymbol() {
   const q = String(form.symbol ?? '').trim()
   if (q.length < 1) { suggestions.value = []; return }
   try {
+    // Scoped to the tab in view: someone adding a coin should not have to
+    // scroll past equities that merely share a prefix.
     const res = await apiFetch<{ results: any[] }>(
-      `/api/fundamentals/search?q=${encodeURIComponent(q)}`,
+      `/api/fundamentals/search?q=${encodeURIComponent(q)}&type=${form.type}`,
     )
     suggestions.value = res.results ?? []
   } catch {
@@ -218,6 +220,11 @@ async function lookupSymbol() {
     suggestions.value = []
   }
 }
+
+watch(() => form.type, () => {
+  suggestions.value = []
+  if (String(form.symbol ?? '').trim()) lookupSymbol()
+})
 
 function applySuggestion(s: { symbol: string, name: string, type: string }) {
   form.symbol = s.symbol
