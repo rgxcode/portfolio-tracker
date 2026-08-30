@@ -51,6 +51,7 @@ const state = {
   lastError: null,
   lastStartedAt: null,
   lastDurationSec: null,
+  lastOutput: null,
 }
 
 const log = (...a) => console.log(`[${formatCET()}] llm-refresh:`, ...a)
@@ -94,9 +95,14 @@ export function refreshIfStale(snapshot) {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
+  // Both streams must be consumed or a full pipe blocks the child. Keep the
+  // tail of each: the agent reports why a lookup failed on stdout, and
+  // discarding it makes a total failure indistinguishable from a clean run,
+  // since it exits 0 either way.
   let stderr = ''
-  child.stderr.on('data', (d) => { stderr += d })
-  child.stdout.resume() // drain, so a full pipe can never block the child
+  let stdout = ''
+  child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000) })
+  child.stdout.on('data', (d) => { stdout = (stdout + d).slice(-4000) })
 
   const timer = setTimeout(() => child.kill('SIGKILL'), RUN_TIMEOUT_MS)
 
@@ -104,8 +110,16 @@ export function refreshIfStale(snapshot) {
     clearTimeout(timer)
     inFlight = false
     const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
-    state.lastOutcome = label
     state.lastDurationSec = Number(secs)
+    state.lastOutput = stdout.trim().split('\n').slice(-8).join('\n') || null
+
+    // The agent exits 0 even when every lookup failed — it just leaves the
+    // snapshot alone. Treat that as a failure here, or the cooldown never
+    // engages and we respawn it on every poll.
+    const wroteNothing = /no usable prices/.test(stdout)
+    if (label === 'ok' && wroteNothing) label = 'ran but wrote nothing'
+    state.lastOutcome = label
+
     if (label === 'ok') {
       state.lastError = null
       log(`refreshed in ${secs}s`)
