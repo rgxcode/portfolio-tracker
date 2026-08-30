@@ -581,15 +581,34 @@ function assetGainPct(a: Asset): number {
 }
 
 // ── Allocation data ─────────────────────────────────────────────────
+/**
+ * Display names per asset type. A lookup rather than a ternary: the previous
+ * two-way test read "crypto, else stocks", so adding metals filed them silently
+ * under Stocks — a gold holding inflated the equity slice instead of appearing
+ * as its own. An unknown type now shows as itself rather than as something else.
+ */
+const TYPE_LABELS: Record<string, string> = {
+  crypto: 'Crypto',
+  stock: 'Stocks',
+  commodity: 'Commodities',
+}
+const typeLabel = (t: string) =>
+  TYPE_LABELS[t] ?? (t ? t[0].toUpperCase() + t.slice(1) : 'Other')
+
 const typeAllocation = computed(() => {
   const typeMap: Record<string, number> = {}
   for (const a of filteredAssets.value) {
-    const label = a.type === 'crypto' ? 'Crypto' : 'Stocks'
+    const label = typeLabel(a.type)
     typeMap[label] = (typeMap[label] || 0) + a.currentPrice * a.quantity
   }
-  const labels = Object.keys(typeMap)
+  // Fixed order, so a slice keeps its colour as holdings come and go rather
+  // than being repainted by whichever type happens to sort first.
+  const order = ['Crypto', 'Stocks', 'Commodities']
+  const labels = Object.keys(typeMap).sort(
+    (a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99),
+  )
   const values = labels.map(l => parseFloat(typeMap[l].toFixed(2)))
-  const colors = labels.map((_, i) => PALETTE[i % PALETTE.length])
+  const colors = labels.map(l => PALETTE[(order.indexOf(l) + 1 || labels.indexOf(l) + 1) % PALETTE.length])
   return { labels, values, colors }
 })
 
@@ -631,7 +650,10 @@ function isStale(asset: { type: string, priceAsOf?: string | null }): boolean {
   if (!asset.priceAsOf) return false
   if (asset.type === 'stock' && !stockWindow.value?.open) return false
   const ageMin = (Date.now() - new Date(asset.priceAsOf).getTime()) / 60000
-  return ageMin > (asset.type === 'crypto' ? 15 : 45)
+  // Metals are fetched every run like crypto, not on the equity cadence, so
+  // they earn the tighter threshold — judging them by the stock rule would have
+  // called a five-minute-old gold price fresh for another forty.
+  return ageMin > (asset.type === 'stock' ? 45 : 15)
 }
 
 async function refresh() {

@@ -8,7 +8,9 @@
         <h3 class="font-semibold text-white truncate">{{ name }}</h3>
         <span
           class="text-xs px-2 py-0.5 rounded-full font-medium"
-          :class="type === 'crypto' ? 'bg-blue-900/60 text-blue-300' : 'bg-purple-900/60 text-purple-300'"
+          :class="type === 'crypto' ? 'bg-blue-900/60 text-blue-300'
+            : type === 'commodity' ? 'bg-amber-900/60 text-amber-300'
+            : 'bg-purple-900/60 text-purple-300'"
         >
           {{ type }}
         </span>
