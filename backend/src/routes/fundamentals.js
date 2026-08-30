@@ -160,13 +160,13 @@ router.get('/search', async (req, res, next) => {
       wantStocks ? Constituent.find({ _id: q.toUpperCase() }, { name: 1, sector: 1 }).lean() : none,
       wantStocks ? Constituent.find({ _id: starts }, { name: 1, sector: 1 }).limit(10).lean() : none,
       wantStocks ? Constituent.find({ name: contains }, { name: 1, sector: 1 }).limit(10).lean() : none,
-      wantCrypto ? Coin.find({ _id: q.toUpperCase() }, { name: 1, rank: 1 }).lean() : none,
-      wantCrypto ? Coin.find({ _id: starts }, { name: 1, rank: 1 }).limit(10).lean() : none,
-      wantCrypto ? Coin.find({ name: contains }, { name: 1, rank: 1 }).limit(10).lean() : none,
+      wantCrypto ? Coin.find({ _id: q.toUpperCase() }, { name: 1, rank: 1, image: 1 }).lean() : none,
+      wantCrypto ? Coin.find({ _id: starts }, { name: 1, rank: 1, image: 1 }).limit(10).lean() : none,
+      wantCrypto ? Coin.find({ name: contains }, { name: 1, rank: 1, image: 1 }).limit(10).lean() : none,
     ])
 
     const shapeStock = d => ({ symbol: d._id, name: d.name, sector: d.sector, type: 'stock' })
-    const shapeCoin = d => ({ symbol: d._id, name: d.name, sector: 'Crypto', type: 'crypto' })
+    const shapeCoin = d => ({ symbol: d._id, name: d.name, sector: 'Crypto', type: 'crypto', image: d.image ?? null })
 
     // Exact ticker matches first, then prefixes, then names — the order someone
     // typing "NV" expects. Crypto interleaves at each tier rather than being

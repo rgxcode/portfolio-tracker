@@ -14,6 +14,12 @@ const coinSchema = new mongoose.Schema(
     coingeckoId: { type: String, required: true }, // 'crypto-com-chain'
     name: String,
     rank: Number,
+    /**
+     * The provider's own logo. Stored rather than derived: crypto logo URLs are
+     * opaque ids, unlike an equity's, which follows from its ticker.
+     */
+    image: String,
+
     /** Yahoo's symbol for history, once verified to be the same asset. */
     yahooSymbol: String,
     updatedAt: { type: Date, required: true },

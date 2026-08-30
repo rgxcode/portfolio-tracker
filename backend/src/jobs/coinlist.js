@@ -44,6 +44,7 @@ export async function refreshCoins() {
           $set: {
             coingeckoId: c.id,
             name: c.name,
+            image: c.image ?? null,
             rank: c.market_cap_rank ?? null,
             updatedAt: now,
           },

@@ -44,6 +44,8 @@ export function useMarketData() {
     asOf: string
     asOfCET: string
     source: string
+    /** Set for crypto only; equity logos are derived from the ticker. */
+    image?: string | null
   }
 
   interface PriceSnapshot {
@@ -130,6 +132,9 @@ export function useMarketData() {
         asOf: quote.asOf,
         asOfCET: quote.asOfCET,
         source: quote.source,
+        // Crypto logos travel with the quote; equity logos derive from the
+        // ticker, so there is nothing to carry for those.
+        image: quote.image ?? null,
       }, persist)
     }
   }

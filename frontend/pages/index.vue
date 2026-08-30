@@ -196,12 +196,7 @@
           class="flex items-center gap-3 py-3 px-3 rounded-xl hover:bg-gray-800/60 transition-colors group"
         >
           <!-- Icon -->
-          <div
-            class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-            :style="{ backgroundColor: iconColor(asset.symbol), color: '#fff' }"
-          >
-            {{ asset.symbol.slice(0, 3).toUpperCase() }}
-          </div>
+          <AssetLogo :symbol="asset.symbol" :type="asset.type" :image="asset.image" :size="40" />
 
           <!-- Name & details -->
           <div class="flex-1 min-w-0">
@@ -300,12 +295,7 @@
                     :to="{ path: '/asset', query: { symbol: asset.symbol.toUpperCase() } }"
                     class="flex items-center gap-2 group"
                   >
-                    <div
-                      class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
-                      :style="{ backgroundColor: iconColor(asset.symbol), color: '#fff' }"
-                    >
-                      {{ asset.symbol.slice(0, 2).toUpperCase() }}
-                    </div>
+                    <AssetLogo :symbol="asset.symbol" :type="asset.type" :image="asset.image" :size="24" />
                     <span class="text-white font-semibold group-hover:text-blue-400 transition-colors">
                       {{ asset.symbol.toUpperCase() }}
                     </span>

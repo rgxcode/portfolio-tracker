@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { useApi } from '~/composables/useApi'
 
 export interface Asset {
+  /** Provider logo, set for crypto; equities derive theirs from the ticker. */
+  image?: string | null
   id: string
   _id?: string
   symbol: string
@@ -145,7 +147,7 @@ export const usePortfolioStore = defineStore('portfolio', {
       id: string,
       currentPrice: number,
       change24h: number,
-      meta?: { asOf?: string, asOfCET?: string, source?: string },
+      meta?: { asOf?: string, asOfCET?: string, source?: string, image?: string | null },
       persist = true,
     ) {
       // Update local state immediately so the UI reflects fresh prices
@@ -160,6 +162,9 @@ export const usePortfolioStore = defineStore('portfolio', {
           priceAsOf: meta?.asOf ?? null,
           priceAsOfCET: meta?.asOfCET ?? null,
           priceSource: meta?.source ?? null,
+          // Keep any logo already known rather than blanking it on a poll that
+          // happens to carry none.
+          image: meta?.image ?? this.assets[idx].image ?? null,
         }
       }
       if (!persist) return

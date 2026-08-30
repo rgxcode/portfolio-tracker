@@ -92,11 +92,11 @@ async function getJson(url, headers = {}) {
  */
 async function resolveCoins() {
   const [tracked, held] = await Promise.all([
-    Coin.find({}, { coingeckoId: 1, name: 1 }).lean(),
+    Coin.find({}, { coingeckoId: 1, name: 1, image: 1 }).lean(),
     mongoose.connection.collection('assets').distinct('symbol', { type: 'crypto' }),
   ])
 
-  const map = new Map(tracked.map(c => [c._id, { id: c.coingeckoId, name: c.name }]))
+  const map = new Map(tracked.map(c => [c._id, { id: c.coingeckoId, name: c.name, image: c.image }]))
 
   // Fall back to the static list when nothing is stored yet, so a fresh
   // database still prices the majors rather than nothing at all.
@@ -123,6 +123,7 @@ async function fetchCryptoPrices() {
   const coins = await resolveCoins()
   const idToSymbol = Object.fromEntries([...coins].map(([sym, c]) => [c.id, sym]))
   const nameOf = Object.fromEntries([...coins].map(([sym, c]) => [sym, c.name]))
+  const imageOf = Object.fromEntries([...coins].map(([sym, c]) => [sym, c.image ?? null]))
 
   const ids = [...coins.values()].map(c => c.id).join(',')
   const url = `${COINGECKO_URL}?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_last_updated_at=true`
@@ -141,6 +142,7 @@ async function fetchCryptoPrices() {
     prices[symbol] = {
       symbol,
       name: nameOf[symbol] ?? COIN_NAMES[symbol] ?? symbol,
+      image: imageOf[symbol] ?? null,
       type: 'crypto',
       coingeckoId: id,
       price: values.usd,

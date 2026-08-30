@@ -2,12 +2,7 @@
   <div
     class="bg-gray-800 rounded-xl p-5 border border-gray-700 flex items-center gap-4 hover:border-gray-600 transition-colors"
   >
-    <div
-      class="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-      :style="{ backgroundColor: iconBg, color: '#fff' }"
-    >
-      {{ symbol.slice(0, 3).toUpperCase() }}
-    </div>
+    <AssetLogo :symbol="symbol" :type="type" :image="image" :size="44" />
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2">
         <h3 class="font-semibold text-white truncate">{{ name }}</h3>

@@ -3,12 +3,12 @@
     <!-- Header -->
     <div class="flex items-start justify-between gap-4 flex-wrap mb-6">
       <div class="flex items-center gap-3 min-w-0">
-        <div
-          class="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold shrink-0 text-white"
-          :style="{ backgroundColor: iconColor(symbol) }"
-        >
-          {{ symbol.slice(0, 3) }}
-        </div>
+        <AssetLogo
+          :symbol="symbol"
+          :type="data?.quote?.type ?? (data?.sector === 'Crypto' ? 'crypto' : 'stock')"
+          :image="data?.quote?.image ?? null"
+          :size="48"
+        />
         <div class="min-w-0">
           <h1 class="text-2xl font-bold text-white leading-tight">{{ symbol }}</h1>
           <p class="text-gray-400 text-sm truncate">
