@@ -76,6 +76,23 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    async changePassword(currentPassword: string, newPassword: string) {
+      const config = useRuntimeConfig()
+      const data = await $fetch<{ token: string; user: AuthUser }>(
+        `${config.public.apiBaseUrl}/api/auth/change-password`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.token}` },
+          body: { currentPassword, newPassword },
+        },
+      )
+      // The server issues a fresh token; adopt it so the session continues
+      // rather than appearing to work and then expiring on the old one.
+      this.token = data.token
+      this.user = data.user
+      this.persistToken()
+    },
+
     async fetchMe() {
       if (!this.token) return
       try {

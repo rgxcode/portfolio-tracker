@@ -36,7 +36,14 @@
               >
                 Admin
               </NuxtLink>
-              <span class="text-gray-400 text-sm ml-3 hidden sm:inline">{{ authStore.user?.email }}</span>
+              <NuxtLink
+                to="/account"
+                class="text-gray-400 text-sm ml-3 hidden sm:inline hover:text-white transition-colors"
+                :class="$route.path === '/account' ? 'text-white' : ''"
+                title="Account settings"
+              >
+                {{ authStore.user?.email }}
+              </NuxtLink>
               <button
                 @click="authStore.logout()"
                 class="ml-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"

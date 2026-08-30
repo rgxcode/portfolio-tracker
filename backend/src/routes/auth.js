@@ -79,6 +79,46 @@ router.post('/login', async (req, res, next) => {
   }
 })
 
+// POST /api/auth/change-password (protected)
+router.post('/change-password', auth, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body ?? {}
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Both the current and new password are required' })
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' })
+    }
+    if (newPassword === currentPassword) {
+      return res.status(400).json({ error: 'New password must differ from the current one' })
+    }
+
+    const user = await User.findById(req.userId)
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    // Re-check the current password even though the request is authenticated:
+    // a token alone should not be enough to take over an account, since it may
+    // have been left behind on a shared machine.
+    const valid = await user.comparePassword(currentPassword)
+    if (!valid) {
+      return res.status(401).json({ error: 'Current password is incorrect' })
+    }
+
+    user.passwordHash = await User.hashPassword(newPassword)
+    await user.save()
+
+    // A fresh token, so the response cannot be mistaken for having invalidated
+    // the old one. Existing tokens stay valid until they expire - revoking them
+    // would need a token store, which this app does not have.
+    res.json({ token: signToken(user._id), user: shapeUser(user) })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // GET /api/auth/me — get current user (protected)
 router.get('/me', auth, async (req, res, next) => {
   try {

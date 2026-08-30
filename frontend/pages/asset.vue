@@ -88,6 +88,14 @@
         </p>
       </section>
 
+      <!-- Charts come before the tables: the shape of the trend is the thing
+           most people want, and the numbers are there to check it against. -->
+      <FundamentalsCharts
+        :income="data.incomeQuarterly ?? []"
+        :earnings="data.earningsQuarterly ?? []"
+        :balance="data.balanceSheetQuarterly ?? []"
+      />
+
       <!-- Valuation -->
       <section v-if="hasMetrics" class="mb-6">
         <h2 class="font-semibold text-white mb-3">Valuation &amp; ratios</h2>
