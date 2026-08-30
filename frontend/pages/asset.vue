@@ -12,19 +12,42 @@
         <div class="min-w-0">
           <h1 class="text-2xl font-bold text-white leading-tight">{{ symbol }}</h1>
           <p class="text-gray-400 text-sm truncate">
-            {{ data?.name || (loading ? 'Loading…' : 'Unknown company') }}
+            {{ data?.name || (loading ? 'Loading…' : '') }}
           </p>
         </div>
       </div>
 
       <div class="flex items-center gap-2">
-        <form class="flex items-center gap-2" @submit.prevent="go(search)">
+        <form class="relative flex items-center gap-2" @submit.prevent="submitSearch">
           <input
             v-model="search"
-            placeholder="Any ticker…"
-            class="w-32 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+            placeholder="Ticker or company…"
+            autocomplete="off"
+            class="w-56 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+            @keydown.down.prevent="move(1)"
+            @keydown.up.prevent="move(-1)"
+            @keydown.esc="suggestions = []"
+            @blur="closeSoon"
+            @focus="lookup"
           />
           <button type="submit" class="px-3 py-1.5 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white">Go</button>
+
+          <ul
+            v-if="suggestions.length"
+            class="absolute top-full left-0 mt-1 w-72 z-30 bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden"
+          >
+            <li
+              v-for="(s, i) in suggestions"
+              :key="s.symbol"
+              class="px-3 py-2 cursor-pointer flex items-baseline gap-2"
+              :class="i === highlighted ? 'bg-gray-700' : 'hover:bg-gray-800'"
+              @mousedown.prevent="go(s.symbol)"
+            >
+              <span class="font-semibold text-white text-sm w-14 shrink-0">{{ s.symbol }}</span>
+              <span class="text-gray-300 text-sm truncate">{{ s.name }}</span>
+              <span class="text-gray-500 text-[11px] ml-auto shrink-0 hidden sm:inline">{{ s.sector }}</span>
+            </li>
+          </ul>
         </form>
         <NuxtLink to="/" class="px-3 py-1.5 rounded-lg text-sm bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700">
           Back
@@ -44,15 +67,21 @@
 
     <template v-if="data">
       <!-- Financials missing: say what is missing and why, and still show the rest -->
-      <div v-if="data.partial" class="bg-amber-900/25 border border-amber-700/60 rounded-xl p-4 mb-6">
-        <p class="text-amber-200 text-sm font-medium">Financial statements aren't available for {{ symbol }} yet.</p>
+      <div v-if="!data.statementsAvailable" class="bg-amber-900/25 border border-amber-700/60 rounded-xl p-4 mb-6">
+        <p class="text-amber-200 text-sm font-medium">No financial statements for {{ symbol }} yet.</p>
         <p class="text-amber-300/70 text-xs mt-1">
-          The fundamentals provider allows 25 requests a day and a full company costs four of them.
-          Price and related tickers below come from other sources and are unaffected. This retries
-          automatically — reload in a few minutes, or after midnight CET if the daily limit is spent.
+          Statements come from SEC filings, which cover S&amp;P 500 members. Price and related
+          tickers below are unaffected.
         </p>
-        <p v-if="data.unavailableReason" class="text-amber-400/50 text-[11px] mt-2 font-mono break-all">
-          {{ truncate(data.unavailableReason, 180) }}
+      </div>
+
+      <!-- Statements are present but the ratio provider is out of quota: a much
+           smaller gap, and saying "unavailable" above a full income statement
+           was simply wrong. -->
+      <div v-else-if="!data.metricsAvailable" class="bg-gray-800/60 border border-gray-700 rounded-xl p-3 mb-6">
+        <p class="text-gray-300 text-xs">
+          Valuation ratios (P/E, market cap) aren't loaded for {{ symbol }} yet — that provider
+          allows 25 requests a day. The statements below are complete and come from SEC filings.
         </p>
       </div>
 
@@ -322,10 +351,52 @@ async function forceRefresh() {
   }
 }
 
+const suggestions = ref<Array<{ symbol: string, name: string, sector: string }>>([])
+const highlighted = ref(-1)
+let lookupTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Debounced: a request per keystroke would be mostly wasted round trips. */
+watch(search, () => {
+  if (lookupTimer) clearTimeout(lookupTimer)
+  lookupTimer = setTimeout(lookup, 150)
+})
+
+async function lookup() {
+  const q = search.value.trim()
+  if (q.length < 1) { suggestions.value = []; return }
+  try {
+    const res = await apiFetch<{ results: any[] }>(
+      `/api/fundamentals/search?q=${encodeURIComponent(q)}`,
+    )
+    suggestions.value = res.results ?? []
+    highlighted.value = suggestions.value.length ? 0 : -1
+  } catch {
+    // A failed suggestion lookup must not block typing a ticker directly.
+    suggestions.value = []
+  }
+}
+
+function move(step: number) {
+  if (!suggestions.value.length) return
+  highlighted.value = (highlighted.value + step + suggestions.value.length) % suggestions.value.length
+}
+
+/** Enter takes the highlighted suggestion, or whatever was typed. */
+function submitSearch() {
+  const pick = suggestions.value[highlighted.value]
+  go(pick ? pick.symbol : search.value)
+}
+
+/** Let a click on a suggestion land before the list closes on blur. */
+function closeSoon() {
+  setTimeout(() => { suggestions.value = [] }, 120)
+}
+
 function go(s: string) {
   const t = s.trim().toUpperCase()
   if (t) router.push({ path: '/asset', query: { symbol: t } })
   search.value = ''
+  suggestions.value = []
 }
 
 // ── Formatting ──────────────────────────────────────────────────────

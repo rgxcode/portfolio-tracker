@@ -3,6 +3,7 @@ import auth from '../middleware/auth.js'
 import { refreshFundamentals, loadFundamentals } from '../jobs/fundamentals.js'
 import { loadSnapshot, STANDARD } from '../jobs/snapshotStore.js'
 import { loadFinancials } from '../jobs/edgar.js'
+import Constituent from '../models/Constituent.js'
 
 const router = Router()
 
@@ -95,6 +96,47 @@ async function currentQuote(symbol) {
   return snap.stocks?.[s] ?? snap.crypto?.[s] ?? null
 }
 
+/**
+ * GET /api/fundamentals/search?q= — ticker or company-name lookup.
+ *
+ * Declared before /:symbol so that route does not treat "search" as a ticker.
+ * Backed by the stored index membership, so it costs nothing and works whether
+ * or not the metered provider has anything left.
+ */
+router.get('/search', async (req, res, next) => {
+  try {
+    const q = String(req.query.q ?? '').trim()
+    if (q.length < 1) return res.json({ results: [] })
+
+    // Escape the input: a stray "(" from a company name would otherwise throw,
+    // and a "." would quietly match any character.
+    const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const starts = new RegExp('^' + safe, 'i')
+    const contains = new RegExp(safe, 'i')
+
+    const [exact, byPrefix, byName] = await Promise.all([
+      Constituent.find({ _id: q.toUpperCase() }, { name: 1, sector: 1 }).lean(),
+      Constituent.find({ _id: starts }, { name: 1, sector: 1 }).limit(10).lean(),
+      Constituent.find({ name: contains }, { name: 1, sector: 1 }).limit(10).lean(),
+    ])
+
+    // Ticker match first, then ticker prefix, then anywhere in the name — the
+    // order someone typing "NV" expects.
+    const seen = new Set()
+    const results = []
+    for (const doc of [...exact, ...byPrefix, ...byName]) {
+      if (seen.has(doc._id)) continue
+      seen.add(doc._id)
+      results.push({ symbol: doc._id, name: doc.name, sector: doc.sector })
+      if (results.length >= 8) break
+    }
+
+    res.json({ results })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // GET /api/fundamentals/:symbol
 router.get('/:symbol', async (req, res, next) => {
   try {
@@ -145,11 +187,37 @@ router.get('/:symbol', async (req, res, next) => {
       }
     }
 
+    /**
+     * Identity can come from three places and the metered provider is only one
+     * of them. When its quota is spent the company still has a name — the index
+     * membership and the SEC filing both carry one — and showing "Unknown
+     * company" for NVIDIA while rendering its financials is nonsense.
+     */
+    const member = await Constituent.findById(symbol).lean()
+    const identity = {
+      name: doc.name || member?.name || filings?.entityName || null,
+      sector: doc.sector || member?.sector || null,
+      industry: doc.industry || member?.subIndustry || null,
+    }
+
+    /**
+     * Two independent things can be missing, and conflating them produced a
+     * page that said statements were unavailable directly above the statements.
+     * Ratios come from the metered provider; statements come from EDGAR.
+     */
+    const statementsAvailable = Boolean(
+      statements || doc.incomeQuarterly?.length || doc.balanceSheetQuarterly?.length,
+    )
+    const metricsAvailable = Object.values(doc.metrics ?? {}).some(v => v != null)
+
     res.json({
       ...doc,
       // Earnings-versus-estimate stays with the metered provider: EDGAR carries
       // what was reported, never what was expected.
       ...(statements ?? { financialsSource: 'alphavantage' }),
+      ...identity,
+      statementsAvailable,
+      metricsAvailable,
       symbol: doc._id,
       ageHours: +(((Date.now() - new Date(doc.fetchedAt).getTime()) / 3600e3)).toFixed(1),
       quote,
