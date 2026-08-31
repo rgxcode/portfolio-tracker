@@ -9,6 +9,7 @@ import Coin from '../models/Coin.js'
 import { COMMODITIES } from '../jobs/commodities.js'
 import Listing from '../models/Listing.js'
 import { cikFor } from '../jobs/listings.js'
+import { ensureHistory, hasNoHistory } from '../jobs/onDemandHistory.js'
 import { formatCET } from '../jobs/marketHours.js'
 import { computeMetrics, priceRange52w, PROVIDER_ONLY } from '../jobs/metrics.js'
 
@@ -229,6 +230,12 @@ router.get('/:symbol', async (req, res, next) => {
     // and decide whether the metered provider needs troubling at all.
     let filings = await loadFinancials(symbol)
 
+    // A market cap needs a price. Without this the first view of a newly
+    // searched company showed statements and no ratios, which reads as broken
+    // rather than as not-yet-fetched.
+    if (await hasNoHistory(symbol)) await ensureHistory(symbol)
+    const quote = await currentQuote(symbol)
+
     /**
      * Fetch on first view rather than pre-loading ten thousand companies.
      *
@@ -247,7 +254,6 @@ router.get('/:symbol', async (req, res, next) => {
         }
       }
     }
-    const quote = await currentQuote(symbol)
 
     let doc = await loadFundamentals(symbol)
     const age = doc ? Date.now() - new Date(doc.fetchedAt).getTime() : Infinity
