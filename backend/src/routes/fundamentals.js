@@ -2,11 +2,13 @@ import { Router } from 'express'
 import auth from '../middleware/auth.js'
 import { refreshFundamentals, loadFundamentals } from '../jobs/fundamentals.js'
 import { loadSnapshot, STANDARD } from '../jobs/snapshotStore.js'
-import { loadFinancials } from '../jobs/edgar.js'
+import { loadFinancials, refreshFinancials } from '../jobs/edgar.js'
 import Constituent from '../models/Constituent.js'
 import PriceHistory from '../models/PriceHistory.js'
 import Coin from '../models/Coin.js'
 import { COMMODITIES } from '../jobs/commodities.js'
+import Listing from '../models/Listing.js'
+import { cikFor } from '../jobs/listings.js'
 import { formatCET } from '../jobs/marketHours.js'
 import { computeMetrics, priceRange52w, PROVIDER_ONLY } from '../jobs/metrics.js'
 
@@ -158,16 +160,26 @@ router.get('/search', async (req, res, next) => {
     // a lookup that only knew about shares was why adding a coin meant typing
     // its name by hand and hoping the app recognised the ticker.
     const none = Promise.resolve([])
-    const [exact, byPrefix, byName, coinExact, coinPrefix, coinName] = await Promise.all([
+    /**
+     * Index members are searched first and separately, so a familiar company
+     * outranks an obscure one that happens to share a prefix. The wider file
+     * then fills in everything else — scoping search to the index was why MP
+     * Materials and SoFi could not be found at all.
+     */
+    const [exact, byPrefix, byName, coinExact, coinPrefix, coinName, listExact, listPrefix, listName] = await Promise.all([
       wantStocks ? Constituent.find({ _id: q.toUpperCase() }, { name: 1, sector: 1 }).lean() : none,
       wantStocks ? Constituent.find({ _id: starts }, { name: 1, sector: 1 }).limit(10).lean() : none,
       wantStocks ? Constituent.find({ name: contains }, { name: 1, sector: 1 }).limit(10).lean() : none,
       wantCrypto ? Coin.find({ _id: q.toUpperCase() }, { name: 1, rank: 1, image: 1 }).lean() : none,
       wantCrypto ? Coin.find({ _id: starts }, { name: 1, rank: 1, image: 1 }).limit(10).lean() : none,
       wantCrypto ? Coin.find({ name: contains }, { name: 1, rank: 1, image: 1 }).limit(10).lean() : none,
+      wantStocks ? Listing.find({ _id: q.toUpperCase() }, { name: 1 }).lean() : none,
+      wantStocks ? Listing.find({ _id: starts }, { name: 1, inIndex: 1 }).limit(12).lean() : none,
+      wantStocks ? Listing.find({ name: contains }, { name: 1, inIndex: 1 }).limit(12).lean() : none,
     ])
 
     const shapeStock = d => ({ symbol: d._id, name: d.name, sector: d.sector, type: 'stock' })
+    const shapeListed = d => ({ symbol: d._id, name: d.name, sector: null, type: 'stock' })
     const shapeCoin = d => ({ symbol: d._id, name: d.name, sector: 'Crypto', type: 'crypto', image: d.image ?? null })
 
     // Exact ticker matches first, then prefixes, then names — the order someone
@@ -183,9 +195,11 @@ router.get('/search', async (req, res, next) => {
     const seen = new Set()
     const results = []
     const tiers = [
-      [...exact.map(shapeStock), ...coinExact.map(shapeCoin), ...commodityHits],
+      [...exact.map(shapeStock), ...coinExact.map(shapeCoin), ...commodityHits, ...listExact.map(shapeListed)],
       [...byPrefix.map(shapeStock), ...coinPrefix.map(shapeCoin)],
       [...byName.map(shapeStock), ...coinName.map(shapeCoin)],
+      // Everything else on a US exchange, after the recognisable names.
+      [...listPrefix.map(shapeListed), ...listName.map(shapeListed)],
     ]
     for (const tier of tiers) {
       for (const doc of tier) {
@@ -213,7 +227,26 @@ router.get('/:symbol', async (req, res, next) => {
 
     // Filings first: they cover every ratio that looks backwards, cost nothing,
     // and decide whether the metered provider needs troubling at all.
-    const filings = await loadFinancials(symbol)
+    let filings = await loadFinancials(symbol)
+
+    /**
+     * Fetch on first view rather than pre-loading ten thousand companies.
+     *
+     * EDGAR is unmetered, so this costs a few seconds once and is then cached
+     * like any other. Pre-loading the whole universe would take hundreds of
+     * megabytes to serve companies nobody looks at.
+     */
+    if (!filings) {
+      const cik = await cikFor(symbol)
+      if (cik) {
+        try {
+          await refreshFinancials(symbol, cik)
+          filings = await loadFinancials(symbol)
+        } catch {
+          // A company with no usable XBRL still gets its price and its name.
+        }
+      }
+    }
     const quote = await currentQuote(symbol)
 
     let doc = await loadFundamentals(symbol)
@@ -284,6 +317,7 @@ router.get('/:symbol', async (req, res, next) => {
      */
     const member = await Constituent.findById(symbol).lean()
     const coin = member ? null : await Coin.findById(symbol).lean()
+    const listed = member || coin ? null : await Listing.findById(symbol).lean()
     const metal = COMMODITIES[symbol] ?? null
 
     /**
@@ -295,7 +329,7 @@ router.get('/:symbol', async (req, res, next) => {
 
     const identity = {
       kind,
-      name: doc.name || member?.name || coin?.name || metal?.name || filings?.entityName || null,
+      name: doc.name || member?.name || coin?.name || metal?.name || listed?.name || filings?.entityName || null,
       sector: doc.sector || member?.sector || (coin ? 'Cryptocurrency' : metal ? 'Commodity' : null),
       industry: doc.industry || member?.subIndustry || (metal ? `Priced per ${metal.unit}` : null),
       logo: coin?.image ?? null,

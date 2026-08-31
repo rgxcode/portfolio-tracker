@@ -2,6 +2,8 @@ import { Router } from 'express'
 import PriceHistory from '../models/PriceHistory.js'
 import { loadSnapshot, STANDARD, LLM } from '../jobs/snapshotStore.js'
 import Coin from '../models/Coin.js'
+import Listing from '../models/Listing.js'
+import { consume } from '../jobs/rateBudget.js'
 import { refreshIfStale, refresherStatus } from '../agents/llmRefresher.js'
 
 const router = Router()
@@ -154,6 +156,55 @@ function downsample(points, max = 500) {
   return out
 }
 
+/**
+ * Fetch and store five years of daily closes for a symbol we have never seen.
+ *
+ * Only for tickers already known to be real — a listed company, or a tracked
+ * coin. This endpoint needs no token, so without that check it would be a way
+ * for anyone to make us fetch arbitrary strings from Yahoo.
+ *
+ * In-flight requests are shared, so a page that renders a chart twice does not
+ * fetch the same history twice.
+ */
+const backfilling = new Map()
+
+async function backfillOnDemand(symbol) {
+  if (backfilling.has(symbol)) return backfilling.get(symbol)
+
+  const run = (async () => {
+    const listed = await Listing.findById(symbol, { _id: 1 }).lean()
+    if (!listed) return 0
+    if (!(await consume('yahoo'))) return 0
+
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5y`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(20000) },
+    )
+    if (!res.ok) return 0
+
+    const result = (await res.json())?.chart?.result?.[0]
+    const stamps = result?.timestamp ?? []
+    const closes = result?.indicators?.quote?.[0]?.close ?? []
+    const ops = stamps
+      .map((t, i) => ({ ts: new Date(t * 1000), price: closes[i] }))
+      .filter(p => typeof p.price === 'number')
+      .map(p => ({
+        updateOne: {
+          filter: { symbol, ts: p.ts },
+          update: { $set: { symbol, type: 'stock', ts: p.ts, price: p.price, source: 'yahoo-ondemand', granularity: 'daily' } },
+          upsert: true,
+        },
+      }))
+
+    if (ops.length === 0) return 0
+    await PriceHistory.bulkWrite(ops, { ordered: false })
+    return ops.length
+  })().finally(() => backfilling.delete(symbol))
+
+  backfilling.set(symbol, run)
+  return run
+}
+
 // GET /api/prices/:symbol/history?period=1M — chart series from our own store
 router.get('/:symbol/history', async (req, res, next) => {
   try {
@@ -161,12 +212,18 @@ router.get('/:symbol/history', async (req, res, next) => {
     const period = req.query.period ?? '1D'
     const cutoff = new Date(periodCutoff(period))
 
-    const rows = await PriceHistory.find(
+    const query = () => PriceHistory.find(
       { symbol, ts: { $gte: cutoff } },
       { _id: 0, ts: 1, price: 1 },
-    )
-      .sort({ ts: 1 })
-      .lean()
+    ).sort({ ts: 1 }).lean()
+
+    let rows = await query()
+
+    // Nothing stored at all: a company we have simply never charted. Fetch it
+    // once, then serve it from our own store like everything else.
+    if (rows.length === 0 && (await PriceHistory.countDocuments({ symbol }).limit(1)) === 0) {
+      if (await backfillOnDemand(symbol)) rows = await query()
+    }
 
     const points = downsample(rows.map(r => ({ timestamp: r.ts.getTime(), price: r.price })))
 

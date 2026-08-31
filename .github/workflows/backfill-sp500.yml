@@ -41,6 +41,13 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: node src/jobs/backfill.js --sp500
 
+      - name: Refresh the US listing universe
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          SEC_USER_AGENT: portfolio-tracker (ranajoy121@gmail.com)
+        run: node -e "import('./src/jobs/listings.js').then(async m => { const mg = await import('mongoose'); await mg.default.connect(process.env.MONGODB_URI); await m.refreshListings(); await mg.default.disconnect() })"
+
       - name: Backfill commodity history
         working-directory: backend
         env:
