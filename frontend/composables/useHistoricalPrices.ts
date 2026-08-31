@@ -24,7 +24,7 @@ export function useHistoricalPrices() {
 
   async function fetchAssetHistory(
     symbol: string,
-    _type: 'crypto' | 'stock',
+    _type: string,
     period: TimePeriod,
   ): Promise<PricePoint[]> {
     const key = `${symbol.toUpperCase()}:${period}`

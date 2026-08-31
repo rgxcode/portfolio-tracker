@@ -483,29 +483,22 @@ async function loadChart() {
 
   chartLoading.value = true
   try {
-    // Separate crypto and stock assets
-    const cryptoAssets = assets.filter(a => a.type === 'crypto')
-    const stockAssets = assets.filter(a => a.type === 'stock')
-
-    // Fetch crypto history in parallel (CoinGecko is generous with rate limits)
-    const cryptoHistories = await Promise.all(
-      cryptoAssets.map(async (asset) => ({
+    /**
+     * Every holding is fetched the same way, whatever its type.
+     *
+     * This used to split into a crypto branch and a stock branch, staggered
+     * against provider rate limits — an artefact of the days when the browser
+     * called CoinGecko and Alpha Vantage directly. Both branches now read the
+     * same endpoint backed by our own database, and the split had quietly
+     * become a filter: a commodity matched neither branch, so gold was dropped
+     * from the chart while still counting towards the total shown above it.
+     */
+    const histories = await Promise.all(
+      assets.map(async asset => ({
         asset,
-        points: await fetchAssetHistory(asset.symbol, 'crypto', selectedPeriod.value),
+        points: await fetchAssetHistory(asset.symbol, asset.type, selectedPeriod.value),
       })),
     )
-
-    // Fetch stock history sequentially with stagger to avoid Alpha Vantage rate limits
-    const stockPointsMap = await fetchAllStockHistories(
-      stockAssets.map(a => ({ symbol: a.symbol, type: 'stock' as const })),
-      selectedPeriod.value,
-    )
-    const stockHistories = stockAssets.map(asset => ({
-      asset,
-      points: stockPointsMap.get(asset.symbol) || [],
-    }))
-
-    const histories = [...cryptoHistories, ...stockHistories]
 
     // Find the asset with the most data points to use as the time axis
     const maxHistory = histories.reduce((a, b) => a.points.length >= b.points.length ? a : b)
