@@ -226,9 +226,21 @@ router.get('/:symbol', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid symbol' })
     }
 
-    // Filings first: they cover every ratio that looks backwards, cost nothing,
-    // and decide whether the metered provider needs troubling at all.
-    let filings = await loadFinancials(symbol)
+    /**
+     * Decide what the symbol is before looking anything up for it.
+     *
+     * This used to resolve the ticker against the SEC file first: GOLD matched
+     * "Gold.com, Inc." and the page presented that company's revenue as the
+     * gold price's fundamentals. A commodity is not a company, and a ticker
+     * collision must not be allowed to imply otherwise.
+     */
+    const metalMeta = COMMODITIES[symbol] ?? null
+    const coinMeta = metalMeta ? null : await Coin.findById(symbol).lean()
+    const isCompany = !metalMeta && !coinMeta
+
+    // Filings cover every ratio that looks backwards and cost nothing, but only
+    // a company has any.
+    let filings = isCompany ? await loadFinancials(symbol) : null
 
     // A market cap needs a price. Without this the first view of a newly
     // searched company showed statements and no ratios, which reads as broken
@@ -243,7 +255,7 @@ router.get('/:symbol', async (req, res, next) => {
      * like any other. Pre-loading the whole universe would take hundreds of
      * megabytes to serve companies nobody looks at.
      */
-    if (!filings) {
+    if (isCompany && !filings) {
       const cik = await cikFor(symbol)
       if (cik) {
         try {
@@ -321,10 +333,10 @@ router.get('/:symbol', async (req, res, next) => {
      * membership and the SEC filing both carry one — and showing "Unknown
      * company" for NVIDIA while rendering its financials is nonsense.
      */
-    const member = await Constituent.findById(symbol).lean()
-    const coin = member ? null : await Coin.findById(symbol).lean()
-    const listed = member || coin ? null : await Listing.findById(symbol).lean()
-    const metal = COMMODITIES[symbol] ?? null
+    const member = isCompany ? await Constituent.findById(symbol).lean() : null
+    const coin = coinMeta
+    const listed = isCompany && !member ? await Listing.findById(symbol).lean() : null
+    const metal = metalMeta
 
     /**
      * What kind of thing this is, so the page can stop describing a coin as a
@@ -382,8 +394,11 @@ router.get('/:symbol', async (req, res, next) => {
       // what was reported, never what was expected.
       ...(statements ?? { financialsSource: 'alphavantage' }),
       ...identity,
-      statementsAvailable,
+      statementsAvailable: isCompany && statementsAvailable,
       statementsExpected,
+      // A metal has no peer group, and a ticker collision would otherwise
+      // hand it the mining companies that share its name.
+      peers: isCompany ? doc.peers ?? [] : [],
       metricsAvailable,
       symbol: doc._id,
       ageHours: +(((Date.now() - new Date(doc.fetchedAt).getTime()) / 3600e3)).toFixed(1),

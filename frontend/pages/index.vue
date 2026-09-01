@@ -190,7 +190,6 @@
             <!-- When this price was actually taken, in CET -->
             <p v-if="asset.priceAsOfCET" class="text-gray-600 text-[10px] mt-0.5">
               @ {{ asset.priceAsOfCET }}
-              <span v-if="isStale(asset)" class="text-amber-500/80">· stale</span>
             </p>
           </div>
 
@@ -611,20 +610,13 @@ function iconColor(symbol: string): string {
   return colors[Math.abs(hash) % colors.length]
 }
 
-/**
- * A price is flagged stale when it is older than its market's refresh rhythm:
- * crypto updates every 5 min, stocks every 15 min while the CET window is open.
- * Stocks outside the window are not stale — that close is the correct price.
+/*
+ * A "stale" badge used to sit beside prices older than their market's refresh
+ * rhythm. It was removed deliberately: the timestamp beneath every price
+ * already says when it was taken, which is the same information without the
+ * implication that something is wrong. A Friday close is not stale on a
+ * Sunday — it is the price.
  */
-function isStale(asset: { type: string, priceAsOf?: string | null }): boolean {
-  if (!asset.priceAsOf) return false
-  if (asset.type === 'stock' && !stockWindow.value?.open) return false
-  const ageMin = (Date.now() - new Date(asset.priceAsOf).getTime()) / 60000
-  // Metals are fetched every run like crypto, not on the equity cadence, so
-  // they earn the tighter threshold — judging them by the stock rule would have
-  // called a five-minute-old gold price fresh for another forty.
-  return ageMin > (asset.type === 'stock' ? 45 : 15)
-}
 
 async function refresh() {
   clearCache()
