@@ -1,84 +1,50 @@
 <template>
   <div>
     <!-- Error banner -->
-    <div v-if="store.error" class="mb-4 bg-red-900/30 border border-red-700 rounded-xl p-3 flex items-center gap-3">
-      <svg class="w-5 h-5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div v-if="store.error" class="mb-4 rounded-lg border border-[rgba(224,121,140,.4)] bg-[rgba(224,121,140,.08)] p-3 flex items-center gap-3">
+      <svg class="w-5 h-5 text-down shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
       </svg>
-      <p class="text-red-300 text-sm">{{ store.error }}</p>
+      <p class="text-down text-sm">{{ store.error }}</p>
     </div>
 
     <!-- Empty state -->
     <div v-if="!store.isLoading && store.assets.length === 0" class="text-center py-20">
-      <div class="bg-gray-800 rounded-2xl p-10 max-w-md mx-auto border border-gray-700">
-        <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div class="n-card p-10 max-w-md mx-auto">
+        <svg class="w-14 h-14 mx-auto mb-4 text-n-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
             d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <h2 class="text-xl font-bold text-white mb-2">No assets yet</h2>
-        <p class="text-gray-400 mb-6 text-sm">Start by adding your first investment to track your portfolio performance.</p>
+        <h2 class="text-xl font-medium mb-2">No assets yet</h2>
+        <p class="text-n-400 mb-6 text-sm">Add your first investment to start tracking the portfolio.</p>
         <NuxtLink
           to="/assets"
-          class="inline-block px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+          class="inline-flex items-center justify-center h-10 px-6 rounded-lg border border-n-accent text-n-accent text-sm font-medium hover:bg-[rgba(145,132,217,.12)] transition-colors no-underline"
         >
-          Add Your First Asset
+          Add your first asset
         </NuxtLink>
       </div>
     </div>
 
-    <!-- Look up any S&P 500 company without owning it -->
-    <div class="flex items-center justify-between gap-3 mb-6 flex-wrap">
-      <TickerSearch
-        placeholder="Look up a ticker or company…"
-        button-label="Open"
-        width-class="w-64 sm:w-80"
-        @select="openTicker"
-      />
-      <NuxtLink
-        to="/compare"
-        class="px-3 py-1.5 rounded-lg text-sm bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 transition-colors shrink-0"
-      >
-        Compare stocks
-      </NuxtLink>
-    </div>
-
-    <template v-if="store.assets.length > 0">
-      <!-- Asset type filter tabs, and the layout switch beside them: adjusting
-           the dashboard is a property of this screen, not a setting buried in
-           a modal. It is off by default, so the default view is the dashboard
-           rather than its own controls. -->
-      <div class="flex items-center justify-between gap-3 mb-6 flex-wrap">
-        <div class="flex items-center gap-2">
-          <button
-            v-for="tab in assetTabs"
-            :key="tab.value"
-            class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors border"
-            :class="activeTab === tab.value
-              ? 'bg-white text-gray-900 border-white'
-              : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400 hover:text-gray-200'"
-            @click="activeTab = tab.value"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
-
-        <button
-          class="px-3 py-1.5 rounded-lg text-sm border transition-colors shrink-0"
-          :class="resizing
-            ? 'bg-blue-600/20 border-blue-600 text-blue-200 font-semibold'
-            : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'"
-          :aria-pressed="resizing"
-          @click="resizing = !resizing"
-        >
-          Adjust layout<span v-if="resizing"> · on</span>
-        </button>
+    <!--
+      The command deck: everything on one screen. A wide fixed rail rather than
+      an adjustable split — the arrangement is the design's answer, so there is
+      nothing here to configure. Below xl the rail drops beneath the main
+      column instead of squeezing it.
+    -->
+    <div v-else-if="store.assets.length > 0" class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-[18px]">
+      <div class="flex flex-col gap-4 min-w-0">
+        <DashboardStatStrip />
+        <DashboardValueChart />
+        <DashboardHoldingsTable />
       </div>
 
-      <DashboardCustomiser />
-
-      <DashboardPanes />
-    </template>
+      <div class="flex flex-col gap-4">
+        <DashboardAllocationBar />
+        <DashboardCoverage />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -92,7 +58,7 @@ definePageMeta({ middleware: 'auth' })
 
 const store = usePortfolioStore()
 const {
-  refreshAllPrices, pollPrices, stockWindow, snapshotAt, snapshotCET,
+  refreshAllPrices, pollPrices,
 } = useMarketData()
 
 /**
@@ -101,19 +67,6 @@ const {
  */
 const POLL_MS = 30000
 let pollTimer: ReturnType<typeof setInterval> | null = null
-
-const now = ref(Date.now())
-
-/** "just now" / "3 min ago" — how old the stored snapshot actually is. */
-const snapshotAge = computed(() => {
-  if (!snapshotAt.value) return ''
-  const mins = Math.floor((now.value - new Date(snapshotAt.value).getTime()) / 60000)
-  if (mins < 1) return 'Prices updated just now'
-  if (mins === 1) return 'Prices updated 1 min ago'
-  if (mins < 60) return `Prices updated ${mins} min ago`
-  const hrs = Math.floor(mins / 60)
-  return hrs === 1 ? 'Prices updated 1 hour ago' : `Prices updated ${hrs} hours ago`
-})
 
 function openTicker(symbol: string) {
   navigateTo({ path: '/asset', query: { symbol } })
@@ -132,7 +85,6 @@ function unitPrice(asset: { currentPrice: number }) {
 
 async function pollTick() {
   await pollPrices()
-  now.value = Date.now()
 }
 
 function stopPolling() {
@@ -305,8 +257,6 @@ function selectPeriod(p: TimePeriod) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
-const PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#a855f7', '#14b8a6', '#eab308', '#6366f1', '#22c55e', '#fb923c']
-
 function assetGain(a: Asset): number {
   return (a.currentPrice - a.purchasePrice) * a.quantity
 }
@@ -344,37 +294,11 @@ const typeAllocation = computed(() => {
     (a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99),
   )
   const values = labels.map(l => parseFloat(typeMap[l].toFixed(2)))
-  const colors = labels.map(l => PALETTE[(order.indexOf(l) + 1 || labels.indexOf(l) + 1) % PALETTE.length])
-  return { labels, values, colors }
-})
-
-const assetAllocation = computed(() => {
-  const labels: string[] = []
-  const values: number[] = []
-  const colors: string[] = []
-  for (const [i, a] of filteredAssets.value.entries()) {
-    const val = a.currentPrice * a.quantity
-    if (val > 0) {
-      labels.push(a.symbol.toUpperCase())
-      values.push(parseFloat(val.toFixed(2)))
-      colors.push(PALETTE[i % PALETTE.length])
-    }
-  }
-  return { labels, values, colors }
+  return { labels, values }
 })
 
 function formatCurrency(n: number): string {
   return currencySymbol.value + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function iconColor(symbol: string): string {
-  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899']
-  let hash = 0
-  for (let i = 0; i < symbol.length; i++) {
-    hash = (hash << 5) - hash + symbol.charCodeAt(i)
-    hash |= 0
-  }
-  return colors[Math.abs(hash) % colors.length]
 }
 
 /*
@@ -399,25 +323,66 @@ async function refresh() {
  * clarity. `reactive` unwraps the refs, so a section writes `d.totalValue`
  * rather than `d.totalValue.value`.
  */
+/**
+ * What the book did over the last 24 hours, in money.
+ *
+ * Derived from each holding's own 24h percentage rather than from a stored
+ * snapshot of yesterday's total, because no such snapshot exists: the value a
+ * day ago is `price / (1 + change)`, summed. Holdings whose provider reported
+ * no 24h figure are left out of both sides of the subtraction, so they cannot
+ * drag the total toward zero — and if none of them reported one, the answer is
+ * "not known" rather than a confident 0.00.
+ */
+const todayChange = computed(() => {
+  let now = 0
+  let before = 0
+  let known = 0
+
+  for (const a of filteredAssets.value) {
+    if (!Number.isFinite(a.change24h)) continue
+    const value = a.currentPrice * a.quantity
+    const prior = (a.currentPrice / (1 + a.change24h / 100)) * a.quantity
+    if (!Number.isFinite(prior)) continue
+    now += value
+    before += prior
+    known++
+  }
+
+  if (!known || before === 0) return { value: null as number | null, percent: 0 }
+  return { value: now - before, percent: ((now - before) / before) * 100 }
+})
+
+/** The largest position, and what share of the book it is. */
+const topHolding = computed(() => {
+  const total = filteredTotalValue.value
+  if (!total || !filteredAssets.value.length) return null
+  const top = filteredAssets.value.reduce((a, b) =>
+    b.currentPrice * b.quantity > a.currentPrice * a.quantity ? b : a,
+  )
+  return {
+    symbol: top.symbol.toUpperCase(),
+    weight: ((top.currentPrice * top.quantity) / total) * 100,
+  }
+})
+
+/** Changing the filter re-reads the chart, so it goes through one function. */
+function setTab(value: TabValue) {
+  activeTab.value = value
+}
+
 provide('dash', reactive({
   store,
-  snapshotAge, snapshotCET, stockWindow,
   formatCurrency, convert, currencySymbol, selectedCurrency, toggleCurrency,
   filteredAssets, sortedFilteredAssets, filteredTotalValue, filteredProfitLoss, filteredPLPercent,
   chartLabels, chartValues, chartLoading, periods, selectedPeriod, selectPeriod,
-  sortMode, unitPrice, assetGain, assetGainPct, iconColor,
-  typeAllocation, assetAllocation, refresh, openTicker,
+  unitPrice, openTicker, refresh,
+  assetTabs, activeTab, setTab, filteredTotalCost, todayChange, topHolding,
+  typeAllocation,
 }))
 
-// Only the toggle and the stored preference are read here; which sections go
-// where, and how wide the panes are, is the pane components' business.
-const { resizing, load: loadLayout } = useDashboardLayout()
 
 // ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {
-  // Guarded and last-resort: a stored layout preference failing to parse must
-  // never prevent the portfolio itself from loading, and this runs first.
-  try { loadLayout() } catch { /* the default layout is a fine answer */ }
   loadPreference()
   document.addEventListener('visibilitychange', syncPolling)
   syncPolling()
