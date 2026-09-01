@@ -64,37 +64,11 @@
         <div class="flex items-center justify-between">
           <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase">Total Worth</p>
 
-          <!-- Price source: the scheduled job vs the LLM agent reading web pages -->
-          <div class="flex items-center gap-0.5 bg-gray-800/70 rounded-full p-0.5 text-[11px] font-semibold">
-            <button
-              class="px-2.5 py-1 rounded-full transition-colors"
-              :class="priceSource === 'standard' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'"
-              title="Prices from the scheduled job (CoinGecko + Yahoo). Covers crypto and stocks."
-              @click="switchSource('standard')"
-            >
-              API
-            </button>
-            <button
-              class="px-2.5 py-1 rounded-full transition-colors flex items-center gap-1.5"
-              :class="priceSource === 'llm' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white'"
-              title="Prices read off web pages by the local LLM agent. Crypto only."
-              @click="switchSource('llm')"
-            >
-              <!-- Pulses on every poll, so a flat price still shows the feed is alive -->
-              <span
-                v-if="priceSource === 'llm'"
-                class="w-1.5 h-1.5 rounded-full bg-white"
-                :class="pollPulse ? 'opacity-100' : 'opacity-30'"
-              />
-              🤖 LLM
-            </button>
-          </div>
+          <!-- How current the figures are. Which job wrote them is an
+               implementation detail, so it is not surfaced. -->
+          <p v-if="snapshotAge" class="text-[11px] text-gray-500">{{ snapshotAge }}</p>
         </div>
 
-        <!-- Provenance for the LLM feed: when the snapshot was written, and by which model -->
-        <p v-if="priceSource === 'llm' && llmMeta" class="text-[10px] text-emerald-500/80 mt-0.5">
-          Read from the web at {{ llmMeta.at }} · {{ llmMeta.model }} · {{ snapshotAge }}
-        </p>
         <div class="flex items-baseline gap-3 mt-1">
           <span class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
             {{ formatCurrency(convert(filteredTotalValue)) }}
@@ -202,7 +176,8 @@
           <div class="flex-1 min-w-0">
             <p class="text-white font-semibold text-sm">{{ asset.symbol.toUpperCase() }}</p>
             <p class="text-gray-500 text-xs">
-              {{ asset.quantity }} | {{ currencySymbol }}{{ convert(asset.purchasePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+              {{ asset.quantity }} × <span class="text-gray-300">{{ unitPrice(asset) }}</span>
+              <span class="text-gray-600"> · paid {{ currencySymbol }}{{ convert(asset.purchasePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
             </p>
             <!-- When this price was actually taken, in CET -->
             <p v-if="asset.priceAsOfCET" class="text-gray-600 text-[10px] mt-0.5">
@@ -304,7 +279,10 @@
                     </svg>
                   </NuxtLink>
                 </td>
-                <td class="text-right text-gray-300 px-4 py-3">{{ asset.quantity }}</td>
+                <td class="text-right px-4 py-3">
+                  <span class="text-gray-300">{{ asset.quantity }}</span>
+                  <span class="text-gray-500 text-xs block">at {{ unitPrice(asset) }}</span>
+                </td>
                 <td class="text-right text-gray-300 px-4 py-3">{{ formatCurrency(convert(asset.purchasePrice * asset.quantity)) }}</td>
                 <td class="text-right text-white font-semibold px-4 py-3">{{ formatCurrency(convert(asset.currentPrice * asset.quantity)) }}</td>
                 <td class="text-right px-4 py-3">
@@ -333,55 +311,47 @@ definePageMeta({ middleware: 'auth' })
 
 const store = usePortfolioStore()
 const {
-  refreshAllPrices, pollPrices, stockWindow, snapshotCET, snapshotAt,
-  priceSource, setPriceSource, loadSourcePreference,
+  refreshAllPrices, pollPrices, stockWindow, snapshotAt,
 } = useMarketData()
 
 /**
- * The LLM snapshot is written by a scheduled job every ~5 minutes, so polling
- * every few seconds only produced identical responses. 30s is frequent enough
- * that a new snapshot shows up promptly without hammering a sleeping free
- * instance. The API source is on the same rhythm and is not polled at all.
+ * Prices are rewritten by a scheduled job every ~5 minutes, so this only needs
+ * to be frequent enough to notice a new snapshot, not to chase one.
  */
-const LLM_POLL_MS = 30000
+const POLL_MS = 30000
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-// Visible proof the feed is alive. The price itself can sit unchanged for
-// minutes, so without this a working poll looks identical to a broken one.
-// A count of polls is not that proof — it climbs whether or not the data ever
-// moves — so the label reports the snapshot's age instead.
-const pollPulse = ref(false)
 const now = ref(Date.now())
-const llmMeta = ref<{ at: string, model: string } | null>(null)
 
 /** "just now" / "3 min ago" — how old the stored snapshot actually is. */
 const snapshotAge = computed(() => {
   if (!snapshotAt.value) return ''
   const mins = Math.floor((now.value - new Date(snapshotAt.value).getTime()) / 60000)
-  if (mins < 1) return 'just now'
-  if (mins === 1) return '1 min ago'
-  if (mins < 60) return `${mins} min ago`
+  if (mins < 1) return 'Prices updated just now'
+  if (mins === 1) return 'Prices updated 1 min ago'
+  if (mins < 60) return `Prices updated ${mins} min ago`
   const hrs = Math.floor(mins / 60)
-  return hrs === 1 ? '1 hour ago' : `${hrs} hours ago`
+  return hrs === 1 ? 'Prices updated 1 hour ago' : `Prices updated ${hrs} hours ago`
 })
 
 function openTicker(symbol: string) {
   navigateTo({ path: '/asset', query: { symbol } })
 }
 
+/** Current price for one unit — what a share or a coin costs on its own. */
+function unitPrice(asset: { currentPrice: number }) {
+  const v = convert(asset.currentPrice ?? 0)
+  if (!v) return '—'
+  // Sub-cent assets need real precision; a five-figure one does not.
+  const decimals = Math.abs(v) >= 1000 ? 0 : Math.abs(v) >= 1 ? 2 : 6
+  return `${currencySymbol.value}${v.toLocaleString('en-US', {
+    minimumFractionDigits: decimals, maximumFractionDigits: decimals,
+  })}`
+}
+
 async function pollTick() {
   await pollPrices()
   now.value = Date.now()
-  pollPulse.value = true
-  setTimeout(() => { pollPulse.value = false }, 400)
-
-  const first = store.assets.find(a => a.type === 'crypto' && a.priceSource)
-  if (snapshotCET.value) {
-    llmMeta.value = {
-      at: snapshotCET.value.split(', ')[1] ?? snapshotCET.value,
-      model: first?.priceSource ?? 'llm',
-    }
-  }
 }
 
 function stopPolling() {
@@ -393,29 +363,21 @@ function stopPolling() {
 
 function startPolling() {
   stopPolling()
-  pollTimer = setInterval(pollTick, LLM_POLL_MS)
+  pollTimer = setInterval(pollTick, POLL_MS)
 }
 
-/** Poll only in LLM mode, and stop when the tab is hidden. */
+/** Poll while the tab is visible; a hidden tab has nobody to inform. */
 function syncPolling() {
-  const shouldPoll = priceSource.value === 'llm'
-    && (!import.meta.client || document.visibilityState === 'visible')
-  if (shouldPoll) startPolling()
+  const visible = !import.meta.client || document.visibilityState === 'visible'
+  if (visible) startPolling()
   else stopPolling()
 }
 
-watch(priceSource, syncPolling)
 onUnmounted(() => {
   stopPolling()
   if (import.meta.client) document.removeEventListener('visibilitychange', syncPolling)
 })
 
-/** Switch data source and immediately re-price the portfolio from it. */
-async function switchSource(source: 'standard' | 'llm') {
-  if (priceSource.value === source) return
-  setPriceSource(source)
-  await refreshAllPrices()
-}
 const { fetchAssetHistory, fetchAllStockHistories, clearCache } = useHistoricalPrices()
 const { selectedCurrency, currencySymbol, convert, toggleCurrency, loadPreference, fetchEurRate } = useCurrency()
 
@@ -658,7 +620,6 @@ async function refresh() {
 // ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {
   loadPreference()
-  loadSourcePreference()
   document.addEventListener('visibilitychange', syncPolling)
   syncPolling()
   fetchEurRate()

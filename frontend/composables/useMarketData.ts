@@ -112,17 +112,16 @@ export function useMarketData() {
    * no rate limit that scales with page views.
    */
   async function fetchAllPrices({ persist = true } = {}): Promise<void> {
-    const endpoint = priceSource.value === 'llm' ? '/api/prices/llm' : '/api/prices'
-    const data = await $fetch<PriceSnapshot>(`${config.public.apiBaseUrl}${endpoint}`)
+    // One endpoint. Which job wrote a given price is an implementation detail
+    // the backend resolves; the dashboard just asks for the latest.
+    const data = await $fetch<PriceSnapshot>(`${config.public.apiBaseUrl}/api/prices`)
 
     // The LLM snapshot has no stock window; leave the standard one in place
     // rather than blanking the label when the user toggles.
     if (data.stockWindow) stockWindow.value = data.stockWindow
     snapshotCET.value = data.updatedAtCET
     snapshotAt.value = data.updatedAt
-    if (priceSource.value === 'standard') {
-      supportedCrypto.value = Object.keys(data.crypto ?? {})
-    }
+    supportedCrypto.value = Object.keys(data.crypto ?? {})
 
     for (const asset of store.assets) {
       const bucket = asset.type === 'crypto'

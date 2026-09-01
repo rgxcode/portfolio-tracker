@@ -47,10 +47,40 @@ function handleReadError(err, res, next) {
   next(err)
 }
 
+/**
+ * Merge in any LLM-written quote that is newer than the scheduled one.
+ *
+ * Two jobs write prices for the same coins on their own schedules. Which of
+ * them happened to run last is an implementation detail, so rather than making
+ * the reader choose a source — as a toggle in the UI once did — the freshest
+ * observation for each symbol wins.
+ */
+async function withFreshest(data) {
+  const llm = await loadSnapshot(LLM)
+  if (!llm?.prices) return data
+
+  const crypto = { ...(data.crypto ?? {}) }
+  let merged = 0
+
+  for (const [symbol, quote] of Object.entries(llm.prices)) {
+    if (typeof quote?.price !== 'number') continue
+    const existing = crypto[symbol]
+    const theirs = new Date(quote.asOf ?? llm.updatedAt).getTime()
+    const ours = existing ? new Date(existing.asOf ?? 0).getTime() : 0
+    if (!(theirs > ours)) continue
+
+    // Keep the logo and name already known: the agent records neither.
+    crypto[symbol] = { ...existing, ...quote, image: existing?.image ?? quote.image ?? null }
+    merged++
+  }
+
+  return merged ? { ...data, crypto } : data
+}
+
 // GET /api/prices — everything: crypto, stocks, FX rate, window status
 router.get('/', async (_req, res, next) => {
   try {
-    const data = await readPrices()
+    const data = await withFreshest(await readPrices())
     res.json({
       ...data,
       ageMinutes: ageMinutes(data.updatedAt),
