@@ -59,258 +59,29 @@
         </button>
       </div>
 
-      <!-- On a wide screen this becomes a dashboard rather than a column:
-           value and chart top-left, allocation to the right, holdings and
-           metrics below them — so the whole portfolio is visible at once
-           instead of being scrolled through. Below xl it stays a single
-           column, which is the right shape for a phone. -->
+      <!-- Customising is opt-in: the control is a single button until asked
+           for, so the default view is the dashboard rather than its settings. -->
+      <div class="mb-4">
+        <div class="flex justify-end">
+          <DashboardCustomiser />
+        </div>
+      </div>
+
+      <!-- On a wide screen this is a dashboard rather than a column: a wide
+           left side and a narrow right one, each rendering whichever sections
+           have been placed there, in the order chosen. Below xl both columns
+           stack, which is the right shape for a phone. -->
       <div class="xl:grid xl:grid-cols-12 xl:gap-x-6 xl:items-start">
-        <div class="xl:col-span-8">
-
-      <!-- Total Worth section -->
-      <div class="mb-2">
-        <div class="flex items-center justify-between">
-          <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase">Total Worth</p>
-
-          <!-- How current the figures are. Which job wrote them is an
-               implementation detail, so it is not surfaced. -->
-          <p v-if="snapshotAge" class="text-[11px] text-gray-500">{{ snapshotAge }}</p>
+        <div class="xl:col-span-8 min-w-0">
+          <DashboardSection v-for="id in layout.main" :key="id" :id="id" />
         </div>
-
-        <div class="flex items-baseline gap-3 mt-1">
-          <span class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
-            {{ formatCurrency(convert(filteredTotalValue)) }}
-          </span>
-          <button
-            class="text-gray-400 text-lg font-medium hover:text-white transition-colors"
-            title="Switch currency"
-            @click="toggleCurrency"
-          >
-            {{ selectedCurrency }} ⇆
-          </button>
-          <button
-            class="ml-1 text-gray-500 hover:text-gray-300 transition-colors"
-            title="Refresh prices"
-            :disabled="store.isLoading"
-            @click="refresh"
-          >
-            <svg
-              class="w-5 h-5"
-              :class="{ 'animate-spin': store.isLoading }"
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-        </div>
-        <!-- P&L summary -->
-        <div class="flex items-center gap-3 mt-1">
-          <span class="text-sm font-semibold" :class="filteredProfitLoss >= 0 ? 'text-emerald-400' : 'text-red-400'">
-            {{ filteredProfitLoss >= 0 ? '+' : '-' }}{{ formatCurrency(Math.abs(convert(filteredProfitLoss))) }}
-          </span>
-          <span
-            class="text-xs font-bold px-1.5 py-0.5 rounded"
-            :class="filteredProfitLoss >= 0 ? 'bg-emerald-900/60 text-emerald-400' : 'bg-red-900/60 text-red-400'"
-          >
-            {{ filteredProfitLoss >= 0 ? '+' : '' }}{{ filteredPLPercent.toFixed(2) }}%
-          </span>
+        <div class="xl:col-span-4 min-w-0">
+          <DashboardSection v-for="id in layout.side" :key="id" :id="id" />
         </div>
       </div>
 
-      <!-- Portfolio chart -->
-      <div class="mt-4 mb-2">
-        <div class="h-64 sm:h-72 xl:h-80 2xl:h-96">
-          <PortfolioChart
-            :labels="chartLabels"
-            :values="chartValues"
-            :loading="chartLoading"
-            :positive="filteredProfitLoss >= 0"
-          />
-        </div>
-      </div>
-
-      <!-- Time period selector -->
-      <div class="flex items-center justify-center gap-1 mb-8">
-        <button
-          v-for="p in periods"
-          :key="p"
-          class="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
-          :class="selectedPeriod === p
-            ? 'bg-gray-700 text-white'
-            : 'text-gray-500 hover:text-gray-300'"
-          @click="selectPeriod(p)"
-        >
-          {{ p }}
-        </button>
-      </div>
-
-      <!-- Sort & manage row -->
-      <div class="flex items-center justify-between mb-4">
-        <NuxtLink to="/assets" class="text-blue-400 hover:text-blue-300 text-sm transition-colors flex items-center gap-1">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Add Asset
-        </NuxtLink>
-        <div class="relative">
-          <select
-            v-model="sortMode"
-            class="appearance-none bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded-full px-4 py-1.5 pr-8 focus:outline-none focus:ring-1 focus:ring-gray-600 cursor-pointer"
-          >
-            <option value="value-desc">Highest value</option>
-            <option value="gains-desc">Absolute gains (high to low)</option>
-            <option value="gains-asc">Absolute gains (low to high)</option>
-            <option value="pct-desc">% gains (high to low)</option>
-            <option value="pct-asc">% gains (low to high)</option>
-          </select>
-          <svg class="w-4 h-4 text-gray-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </div>
-
-      <!-- Holdings list -->
-      <div class="space-y-1">
-        <div
-          v-for="asset in sortedFilteredAssets"
-          :key="asset.id"
-          class="flex items-center gap-3 py-3 px-3 rounded-xl hover:bg-gray-800/60 transition-colors group"
-        >
-          <!-- Icon -->
-          <AssetLogo :symbol="asset.symbol" :type="asset.type" :image="asset.image" :size="40" />
-
-          <!-- Name & details -->
-          <div class="flex-1 min-w-0">
-            <p class="text-white font-semibold text-sm">{{ asset.symbol.toUpperCase() }}</p>
-            <p class="text-gray-500 text-xs">
-              {{ asset.quantity }} × <span class="text-gray-300">{{ unitPrice(asset) }}</span>
-              <span class="text-gray-600"> · paid {{ currencySymbol }}{{ convert(asset.purchasePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
-            </p>
-            <!-- When this price was actually taken, in CET -->
-            <p v-if="asset.priceAsOfCET" class="text-gray-600 text-[10px] mt-0.5">
-              @ {{ asset.priceAsOfCET }}
-            </p>
-          </div>
-
-          <!-- Value & gain -->
-          <div class="text-right shrink-0">
-            <p class="text-white font-semibold text-sm">
-              {{ formatCurrency(convert(asset.currentPrice * asset.quantity)) }}
-            </p>
-            <div class="flex items-center justify-end gap-1.5">
-              <span class="text-xs" :class="assetGain(asset) >= 0 ? 'text-emerald-400' : 'text-red-400'">
-                {{ assetGain(asset) >= 0 ? '+' : '-' }}{{ formatCurrency(Math.abs(convert(assetGain(asset)))) }}
-              </span>
-              <span
-                class="text-[10px] font-bold px-1 py-0.5 rounded"
-                :class="assetGain(asset) >= 0 ? 'bg-emerald-900/60 text-emerald-400' : 'bg-red-900/60 text-red-400'"
-              >
-                {{ assetGain(asset) >= 0 ? '+' : '' }}{{ assetGainPct(asset).toFixed(2) }}%
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Footer summary -->
-      <div class="mt-6 pt-4 border-t border-gray-800 flex items-center justify-between text-sm text-gray-500">
-        <span>{{ filteredAssets.length }} asset{{ filteredAssets.length === 1 ? '' : 's' }}</span>
-        <div class="text-right">
-          <div v-if="snapshotCET" class="text-xs">Snapshot {{ snapshotCET }}</div>
-          <div v-if="stockWindow" class="text-[10px] text-gray-600">
-            Stocks {{ stockWindow.open ? 'live' : 'paused' }} · {{ stockWindow.status }}
-          </div>
-        </div>
-      </div>
-
-        </div><!-- /left column -->
-
-        <!-- Allocation and metrics: a sidebar on a wide screen, and the same
-             stacked sections as before on a narrow one. -->
-        <div class="xl:col-span-4">
-      <div class="mt-8 pt-6 border-t border-gray-800 xl:mt-0 xl:pt-0 xl:border-t-0">
-        <h3 class="text-white font-bold text-lg mb-5">Allocation</h3>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4 mb-8">
-          <!-- By Type -->
-          <div class="bg-gray-800/50 rounded-2xl border border-gray-700 p-5">
-            <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase mb-3">By Type</p>
-            <div class="h-72 xl:h-64">
-              <AllocationPieChart
-                :labels="typeAllocation.labels"
-                :values="typeAllocation.values"
-                :colors="typeAllocation.colors"
-              />
-            </div>
-          </div>
-
-          <!-- By Asset -->
-          <div class="bg-gray-800/50 rounded-2xl border border-gray-700 p-5">
-            <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase mb-3">By Asset</p>
-            <div class="h-72 xl:h-64">
-              <AllocationPieChart
-                :labels="assetAllocation.labels"
-                :values="assetAllocation.values"
-                :colors="assetAllocation.colors"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- Metrics table -->
-        <div class="bg-gray-800/50 rounded-2xl border border-gray-700 overflow-hidden">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-gray-700">
-                <th class="text-left text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Asset</th>
-                <th class="text-right text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Owned</th>
-                <th class="text-right text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Cost Basis</th>
-                <th class="text-right text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Value</th>
-                <th class="text-right text-gray-400 font-semibold text-xs uppercase tracking-wider px-4 py-3">Unrealized Gain</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="asset in sortedFilteredAssets"
-                :key="'tbl-' + asset.id"
-                class="border-b border-gray-700/50 last:border-0 hover:bg-gray-700/30 transition-colors"
-              >
-                <td class="px-4 py-3">
-                  <NuxtLink
-                    :to="{ path: '/asset', query: { symbol: asset.symbol.toUpperCase() } }"
-                    class="flex items-center gap-2 group"
-                  >
-                    <AssetLogo :symbol="asset.symbol" :type="asset.type" :image="asset.image" :size="24" />
-                    <span class="text-white font-semibold group-hover:text-blue-400 transition-colors">
-                      {{ asset.symbol.toUpperCase() }}
-                    </span>
-                    <svg class="w-3.5 h-3.5 text-gray-600 group-hover:text-blue-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </NuxtLink>
-                </td>
-                <td class="text-right px-4 py-3">
-                  <span class="text-gray-300">{{ asset.quantity }}</span>
-                  <span class="text-gray-500 text-xs block">at {{ unitPrice(asset) }}</span>
-                </td>
-                <td class="text-right text-gray-300 px-4 py-3">{{ formatCurrency(convert(asset.purchasePrice * asset.quantity)) }}</td>
-                <td class="text-right text-white font-semibold px-4 py-3">{{ formatCurrency(convert(asset.currentPrice * asset.quantity)) }}</td>
-                <td class="text-right px-4 py-3">
-                  <span :class="assetGain(asset) >= 0 ? 'text-emerald-400' : 'text-red-400'" class="font-semibold">
-                    {{ assetGain(asset) >= 0 ? '+' : '-' }}{{ formatCurrency(Math.abs(convert(assetGain(asset)))) }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-        </div><!-- /right column -->
-      </div><!-- /dashboard grid -->
-
-      <!-- LLM read of the holdings, full width beneath the dashboard -->
-      <PortfolioInsights />
+      <!-- Full width beneath the grid unless it has been moved into a column -->
+      <PortfolioInsights v-if="layout.hidden.indexOf('insights') === -1 && !inAColumn('insights')" />
     </template>
   </div>
 </template>
@@ -624,8 +395,30 @@ async function refresh() {
   loadChart()
 }
 
+/**
+ * Everything the sections read, in one reactive object.
+ *
+ * Provided rather than passed: each section works from the same portfolio, and
+ * threading twenty values through props would add noise without adding
+ * clarity. `reactive` unwraps the refs, so a section writes `d.totalValue`
+ * rather than `d.totalValue.value`.
+ */
+provide('dash', reactive({
+  store,
+  snapshotAge, snapshotCET, stockWindow,
+  formatCurrency, convert, currencySymbol, selectedCurrency, toggleCurrency,
+  filteredAssets, sortedFilteredAssets, filteredTotalValue, filteredProfitLoss, filteredPLPercent,
+  chartLabels, chartValues, chartLoading, periods, selectedPeriod, selectPeriod,
+  sortMode, unitPrice, assetGain, assetGainPct, iconColor,
+  typeAllocation, assetAllocation, refresh, openTicker,
+}))
+
+const { layout, load: loadLayout, columnOf } = useDashboardLayout()
+const inAColumn = (id: string) => ['main', 'side'].includes(columnOf(id))
+
 // ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {
+  loadLayout()
   loadPreference()
   document.addEventListener('visibilitychange', syncPolling)
   syncPolling()
