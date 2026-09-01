@@ -91,4 +91,8 @@
  * portfolio, and passing it down piece by piece would be noise.
  */
 const d = inject<any>('dash')
+
+// Rendering nothing at all would look like an empty dashboard rather than a
+// wiring fault, and take an hour to tell apart.
+if (!d && import.meta.client) console.error('DashboardHoldings: dashboard state was not provided')
 </script>

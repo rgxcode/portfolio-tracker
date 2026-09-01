@@ -418,7 +418,9 @@ const inAColumn = (id: string) => ['main', 'side'].includes(columnOf(id))
 
 // ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {
-  loadLayout()
+  // Guarded and last-resort: a stored layout preference failing to parse must
+  // never prevent the portfolio itself from loading, and this runs first.
+  try { loadLayout() } catch { /* the default layout is a fine answer */ }
   loadPreference()
   document.addEventListener('visibilitychange', syncPolling)
   syncPolling()
