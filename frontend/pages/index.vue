@@ -59,29 +59,12 @@
         </button>
       </div>
 
-      <!-- Customising is opt-in: the control is a single button until asked
-           for, so the default view is the dashboard rather than its settings. -->
-      <div class="mb-4">
-        <div class="flex justify-end">
-          <DashboardCustomiser />
-        </div>
-      </div>
+      <!-- Named layouts, each with its own arrangement and column widths.
+           Switching is one click; the editor behind "Customise" is opt-in, so
+           the default view is the dashboard rather than its settings. -->
+      <DashboardWorkspaceBar />
 
-      <!-- On a wide screen this is a dashboard rather than a column: a wide
-           left side and a narrow right one, each rendering whichever sections
-           have been placed there, in the order chosen. Below xl both columns
-           stack, which is the right shape for a phone. -->
-      <div class="xl:grid xl:grid-cols-12 xl:gap-x-6 xl:items-start">
-        <div class="xl:col-span-8 min-w-0">
-          <DashboardSection v-for="id in layout.main" :key="id" :id="id" />
-        </div>
-        <div class="xl:col-span-4 min-w-0">
-          <DashboardSection v-for="id in layout.side" :key="id" :id="id" />
-        </div>
-      </div>
-
-      <!-- Full width beneath the grid unless it has been moved into a column -->
-      <PortfolioInsights v-if="layout.hidden.indexOf('insights') === -1 && !inAColumn('insights')" />
+      <DashboardColumns />
     </template>
   </div>
 </template>
@@ -413,8 +396,9 @@ provide('dash', reactive({
   typeAllocation, assetAllocation, refresh, openTicker,
 }))
 
-const { layout, load: loadLayout, columnOf } = useDashboardLayout()
-const inAColumn = (id: string) => ['main', 'side'].includes(columnOf(id))
+// Only the stored preference is read here; which sections go where, and how
+// wide the columns are, is the workspace components' business.
+const { load: loadLayout } = useDashboardLayout()
 
 // ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {
