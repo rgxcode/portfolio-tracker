@@ -1,43 +1,14 @@
 <template>
-  <div v-if="editing" class="mt-3 bg-gray-800 border border-gray-700 rounded-2xl p-4">
-    <!-- What this layout is called, and how many columns it has -->
-    <div class="flex items-center gap-3 flex-wrap mb-4">
-      <input
-        :value="ws.name"
-        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white w-48 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        aria-label="Layout name"
-        @change="rename(($event.target as HTMLInputElement).value)"
-      />
-
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-gray-500">Columns</span>
-        <div class="flex items-center gap-0.5 bg-gray-900 rounded-lg p-0.5 text-xs font-medium">
-          <button
-            v-for="n in MAX_COLUMNS"
-            :key="n"
-            class="w-7 h-7 rounded-md transition-colors"
-            :class="ws.columns.length === n ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'"
-            @click="setColumnCount(n)"
-          >{{ n }}</button>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-3 ml-auto text-xs">
-        <button class="text-gray-400 hover:text-white" @click="duplicate">Duplicate</button>
-        <button class="text-gray-400 hover:text-white" @click="reset">Reset this layout</button>
-        <button
-          class="text-gray-400 hover:text-red-400 disabled:opacity-30 disabled:hover:text-gray-400"
-          :disabled="workspaces.length <= 1"
-          :title="workspaces.length <= 1 ? 'The last layout cannot be deleted' : 'Delete this layout'"
-          @click="remove(activeId)"
-        >Delete</button>
-      </div>
+  <div v-if="resizing" class="mb-6 bg-gray-800 border border-gray-700 rounded-2xl p-4">
+    <div class="flex items-baseline justify-between gap-3 flex-wrap mb-3">
+      <p class="text-sm text-gray-300">
+        Drag the divider between the panes to change their widths, and a panel's
+        bottom edge for its height. Saved on this device.
+      </p>
+      <button class="text-xs text-gray-500 hover:text-gray-300 shrink-0" @click="reset">
+        Reset the layout
+      </button>
     </div>
-
-    <p class="text-sm text-gray-300 mb-3">
-      Choose where each part sits in <span class="text-white">{{ ws.name }}</span>. Drag the dividers
-      between columns to change their widths. Saved on this device.
-    </p>
 
     <ul class="space-y-2">
       <li
@@ -50,11 +21,11 @@
           <p class="text-[11px] text-gray-500 truncate">{{ s.hint }}</p>
         </div>
 
-        <!-- Where it goes. On a narrow screen the columns stack, so these read
-             as order rather than position — which is still meaningful. -->
+        <!-- Which pane it is in. On a narrow screen the panes stack, so these
+             read as order rather than position — which is still meaningful. -->
         <div class="flex items-center gap-0.5 bg-gray-800 rounded-lg p-0.5 text-[11px] font-medium">
           <button
-            v-for="p in placements"
+            v-for="p in PLACEMENTS"
             :key="p.id"
             class="px-2 py-1 rounded-md transition-colors"
             :class="placementOf(s.id) === p.id ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'"
@@ -63,7 +34,7 @@
           >{{ p.label }}</button>
         </div>
 
-        <!-- Reorder within a column. Buttons rather than dragging: this has to
+        <!-- Reorder within a pane. Buttons rather than dragging: this has to
              work with a thumb on a phone as well as a mouse. -->
         <div class="flex items-center gap-0.5">
           <button
@@ -78,46 +49,40 @@
             title="Move down"
             @click="nudge(s.id, 1)"
           >↓</button>
+          <!-- Only offered once there is a dragged height to give back. -->
+          <button
+            class="w-7 h-7 rounded-md bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30"
+            :disabled="!(s.id in layout.heights)"
+            title="Fit this panel to its contents"
+            @click="clearHeight(s.id)"
+          >⇕</button>
         </div>
       </li>
     </ul>
 
-    <div class="flex items-baseline justify-between gap-3 mt-3 flex-wrap">
-      <p class="text-[11px] text-gray-600">
-        On a narrow screen everything stacks in one column, left to right, in the order above.
-      </p>
-      <button class="text-[11px] text-gray-600 hover:text-gray-400" @click="resetAll">
-        Reset all layouts
-      </button>
-    </div>
+    <p class="text-[11px] text-gray-600 mt-3">
+      On a narrow screen everything stacks in one column — left pane first, then
+      right — and panels take the height of their contents.
+    </p>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { Placement } from '~/composables/useDashboardLayout'
 
+/**
+ * Where each section goes, alongside the drag affordances on the panes
+ * themselves. It shares the one "Adjust layout" toggle with them rather than
+ * having a switch of its own: moving a panel and resizing it are the same
+ * errand, and splitting them across two controls only asks which one you meant.
+ */
 const {
-  SECTIONS, MAX_COLUMNS, editing, active, workspaces, activeId,
-  placementOf, place, nudge, setColumnCount, rename, duplicate, remove, reset, resetAll,
+  SECTIONS, resizing, layout, placementOf, place, nudge, clearHeight, reset,
 } = useDashboardLayout()
 
-const ws = active
-
-/**
- * The buttons offered per section: one per column this layout actually has,
- * then the full-width band and hiding. Derived from the workspace rather than
- * fixed, so dropping to two columns cannot leave a button pointing at a third.
- */
-const placements = computed<Array<{ id: Placement, label: string, hint: string }>>(() => {
-  const cols = ws.value.columns.map((_, i) => ({
-    id: `c${i}` as Placement,
-    label: String(i + 1),
-    hint: `Column ${i + 1}`,
-  }))
-  return [
-    ...cols,
-    { id: 'full', label: 'Wide', hint: 'Full width beneath the columns' },
-    { id: 'hidden', label: 'Hide', hint: 'Do not show this at all' },
-  ]
-})
+const PLACEMENTS: Array<{ id: Placement, label: string, hint: string }> = [
+  { id: 'left', label: 'Left', hint: 'The left pane' },
+  { id: 'right', label: 'Right', hint: 'The right pane' },
+  { id: 'hidden', label: 'Hide', hint: 'Do not show this at all' },
+]
 </script>

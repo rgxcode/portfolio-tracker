@@ -44,27 +44,40 @@
     </div>
 
     <template v-if="store.assets.length > 0">
-      <!-- Asset type filter tabs -->
-      <div class="flex items-center gap-2 mb-6">
+      <!-- Asset type filter tabs, and the layout switch beside them: adjusting
+           the dashboard is a property of this screen, not a setting buried in
+           a modal. It is off by default, so the default view is the dashboard
+           rather than its own controls. -->
+      <div class="flex items-center justify-between gap-3 mb-6 flex-wrap">
+        <div class="flex items-center gap-2">
+          <button
+            v-for="tab in assetTabs"
+            :key="tab.value"
+            class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors border"
+            :class="activeTab === tab.value
+              ? 'bg-white text-gray-900 border-white'
+              : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400 hover:text-gray-200'"
+            @click="activeTab = tab.value"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
         <button
-          v-for="tab in assetTabs"
-          :key="tab.value"
-          class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors border"
-          :class="activeTab === tab.value
-            ? 'bg-white text-gray-900 border-white'
-            : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400 hover:text-gray-200'"
-          @click="activeTab = tab.value"
+          class="px-3 py-1.5 rounded-lg text-sm border transition-colors shrink-0"
+          :class="resizing
+            ? 'bg-blue-600/20 border-blue-600 text-blue-200 font-semibold'
+            : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'"
+          :aria-pressed="resizing"
+          @click="resizing = !resizing"
         >
-          {{ tab.label }}
+          Adjust layout<span v-if="resizing"> · on</span>
         </button>
       </div>
 
-      <!-- Named layouts, each with its own arrangement and column widths.
-           Switching is one click; the editor behind "Customise" is opt-in, so
-           the default view is the dashboard rather than its settings. -->
-      <DashboardWorkspaceBar />
+      <DashboardCustomiser />
 
-      <DashboardColumns />
+      <DashboardPanes />
     </template>
   </div>
 </template>
@@ -396,9 +409,9 @@ provide('dash', reactive({
   typeAllocation, assetAllocation, refresh, openTicker,
 }))
 
-// Only the stored preference is read here; which sections go where, and how
-// wide the columns are, is the workspace components' business.
-const { load: loadLayout } = useDashboardLayout()
+// Only the toggle and the stored preference are read here; which sections go
+// where, and how wide the panes are, is the pane components' business.
+const { resizing, load: loadLayout } = useDashboardLayout()
 
 // ── Lifecycle ───────────────────────────────────────────────────────
 onMounted(async () => {

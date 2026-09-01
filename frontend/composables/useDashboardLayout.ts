@@ -1,15 +1,19 @@
 /**
- * Dashboard workspaces: named layouts a person switches between.
+ * The dashboard as two resizable panes.
  *
- * The dashboard used to have one arrangement, chosen once. That answers "where
- * should this box live" but not "what am I doing right now" — checking the
- * morning move, watching a position, and reading up on a holding want genuinely
- * different screens, and re-dragging the same panels between them is the whole
- * chore. A workspace is one saved answer; the tabs switch between them.
+ * Each section sits in the left pane or the right one, the divider between them
+ * is draggable, and any section's height can be dragged from its bottom edge.
+ * That is the whole model: one arrangement, adjusted in place, rather than a set
+ * of named layouts to switch between. Someone who wants the chart bigger drags
+ * it bigger — they do not first decide which saved screen they are on.
+ *
+ * Two panes and no more, deliberately. It cannot express a three-up trading
+ * view, and in exchange there is no grid to reason about, no arrange mode to
+ * enter before anything responds, and nothing to name.
  *
  * Kept in the browser rather than the database: it is a display preference, it
  * should apply instantly without a round trip, and it is not worth an account
- * migration. A device that has never been customised gets the presets.
+ * migration. A device that has never been adjusted gets the defaults below.
  */
 
 export interface DashboardSection {
@@ -19,7 +23,7 @@ export interface DashboardSection {
   hint: string
 }
 
-/** Everything that can be placed. Order here is the order in the customiser. */
+/** Everything that can be placed. Order here is the order in the arranger. */
 export const SECTIONS: DashboardSection[] = [
   { id: 'portfolio', label: 'Portfolio value & chart', hint: 'Total worth, profit, and the value over time' },
   { id: 'holdings', label: 'Holdings', hint: 'Each asset with its quantity and unit price' },
@@ -28,199 +32,196 @@ export const SECTIONS: DashboardSection[] = [
   { id: 'insights', label: 'What the coverage is saying', hint: 'Recent articles about your holdings' },
 ]
 
-/**
- * Where one section sits: a column by index, the full-width band beneath the
- * columns, or nowhere. Strings rather than a tagged union so the customiser can
- * render a row of buttons from a list and compare with `===`.
- */
-export type Placement = `c${number}` | 'full' | 'hidden'
+/** Which pane a section is in, or that it is in neither. */
+export type Placement = 'left' | 'right' | 'hidden'
 
-export interface Workspace {
-  id: string
-  name: string
-  /** Section ids per column, in the order they stack. One to three columns. */
-  columns: string[][]
-  /** Relative width per column; same length as `columns`, normalised to sum 1. */
-  widths: number[]
-  /** Sections spanning the whole width beneath the columns. */
-  full: string[]
+export interface SplitLayout {
+  /** Section ids per pane, in the order they stack. */
+  left: string[]
+  right: string[]
   hidden: string[]
+  /** The left pane's share of the width, 0–1. The right pane takes the rest. */
+  split: number
+  /**
+   * Dragged heights in pixels, by section id. A section with no entry sizes
+   * itself to its content, which is the right default for all of them — a
+   * height is only ever here because someone asked for one.
+   */
+  heights: Record<string, number>
 }
 
-export const MAX_COLUMNS = 3
-/** No column may be dragged narrower than this — below it, panels stop working. */
-export const MIN_COLUMN_PX = 260
+/** Neither pane may be dragged narrower than this — below it, panels stop working. */
+export const MIN_PANE_PX = 260
+/** Nor any section shorter than this, which is about one row plus its heading. */
+export const MIN_SECTION_PX = 140
+/** A dragged height beyond this is almost certainly a slip, not an intention. */
+export const MAX_SECTION_PX = 2000
 
-/**
- * The three presets, each a different job rather than a different taste.
- * Overview reproduces the layout that was there before workspaces existed, so
- * an upgrade changes nothing until someone asks it to.
- */
-const PRESETS: Workspace[] = [
-  {
-    id: 'overview',
-    name: 'Overview',
-    columns: [['portfolio', 'holdings'], ['allocation', 'metrics']],
-    widths: [0.66, 0.34],
-    full: ['insights'],
+/** The arrangement that was there before any of this was adjustable. */
+function defaults(): SplitLayout {
+  return {
+    left: ['portfolio', 'holdings'],
+    right: ['allocation', 'metrics'],
     hidden: [],
-  },
-  {
-    id: 'trading',
-    name: 'Trading',
-    // The chart as large as it goes, holdings beside it, and nothing to read:
-    // this is the screen for watching, not for deciding.
-    columns: [['portfolio'], ['holdings', 'allocation']],
-    widths: [0.72, 0.28],
-    full: [],
-    hidden: ['metrics', 'insights'],
-  },
-  {
-    id: 'research',
-    name: 'Research',
-    // Coverage gets a column of its own rather than a strip at the bottom,
-    // with the numbers it is talking about on either side.
-    columns: [['portfolio', 'allocation'], ['insights'], ['metrics', 'holdings']],
-    widths: [0.36, 0.36, 0.28],
-    full: [],
-    hidden: [],
-  },
-]
+    split: 0.66,
+    heights: {},
+  }
+}
 
-const STORAGE_KEY = 'dashboardWorkspaces.v1'
-/** The single-layout preference this replaced; read once, then superseded. */
+const STORAGE_KEY = 'dashboardSplit.v1'
+/** The two preferences this replaced, read once on upgrade then superseded. */
+const WORKSPACES_KEY = 'dashboardWorkspaces.v1'
 const LEGACY_KEY = 'dashboardLayout.v1'
 
 /**
- * Make a stored workspace safe to render: clamp the column count, drop
- * sections that no longer exist, and append any that were added to the app
- * since it was saved. A new section must never simply fail to appear.
+ * Make a stored layout safe to render: drop sections that no longer exist,
+ * clamp the split, and append any section added to the app since it was saved.
+ * A new section must never simply fail to appear.
  */
-function reconcile(w: Partial<Workspace>): Workspace {
+function reconcile(l: Partial<SplitLayout>): SplitLayout {
   const known = new Set(SECTIONS.map(s => s.id))
-  const cols = (Array.isArray(w.columns) ? w.columns : [])
-    .slice(0, MAX_COLUMNS)
-    .map(c => (Array.isArray(c) ? c.filter(id => known.has(id)) : []))
-  if (cols.length === 0) cols.push([])
+  const seen = new Set<string>()
+  /** Keep each id once: a section in both panes would mount twice. */
+  const clean = (list: unknown): string[] =>
+    (Array.isArray(list) ? list : []).filter((id): id is string => {
+      if (typeof id !== 'string' || !known.has(id) || seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
 
-  const out: Workspace = {
-    id: String(w.id || `ws-${Date.now()}`),
-    name: String(w.name || 'Layout'),
-    columns: cols,
-    widths: normalise(Array.isArray(w.widths) ? w.widths : [], cols.length),
-    full: (Array.isArray(w.full) ? w.full : []).filter(id => known.has(id)),
-    hidden: (Array.isArray(w.hidden) ? w.hidden : []).filter(id => known.has(id)),
+  const out: SplitLayout = {
+    left: clean(l.left),
+    right: clean(l.right),
+    hidden: clean(l.hidden),
+    split: clampSplit(l.split),
+    heights: cleanHeights(l.heights, known),
   }
 
-  const placed = new Set([...out.columns.flat(), ...out.full, ...out.hidden])
-  for (const s of SECTIONS) {
-    if (!placed.has(s.id)) out.columns[out.columns.length - 1].push(s.id)
+  for (const s of SECTIONS) if (!seen.has(s.id)) out.right.push(s.id)
+  return out
+}
+
+/**
+ * Keep the divider away from both ends. As a fraction rather than pixels, so a
+ * split set on a 27" monitor still means something on a laptop: the proportion
+ * survives, the absolute width does not.
+ */
+function clampSplit(n: unknown): number {
+  return Number.isFinite(n) ? Math.min(0.85, Math.max(0.15, n as number)) : 0.66
+}
+
+function cleanHeights(h: unknown, known: Set<string>): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (!h || typeof h !== 'object') return out
+  for (const [id, px] of Object.entries(h as Record<string, unknown>)) {
+    if (!known.has(id) || !Number.isFinite(px)) continue
+    out[id] = Math.min(MAX_SECTION_PX, Math.max(MIN_SECTION_PX, px as number))
   }
   return out
 }
 
-/** Weights as fractions of one, with a sane fallback for junk input. */
-function normalise(widths: number[], count: number): number[] {
-  const w = widths.slice(0, count).map(n => (Number.isFinite(n) && n > 0 ? n : 0))
-  while (w.length < count) w.push(0)
-  const total = w.reduce((a, b) => a + b, 0)
-  if (total <= 0) return Array.from({ length: count }, () => 1 / count)
-  return w.map(n => (n > 0 ? n / total : 0.0001))
-}
-
-function defaults(): Workspace[] {
-  return PRESETS.map(p => reconcile(structuredClone(p)))
+/**
+ * Fold a saved workspace set down to one two-pane layout. The workspace that
+ * was on screen is the one that survives; a third column and the full-width
+ * band both empty into the left pane, since that is where their contents were
+ * widest. Layouts that were only ever switched away to are not worth keeping
+ * around invisibly, so they go.
+ */
+function fromWorkspaces(parsed: any): Partial<SplitLayout> | null {
+  const list = Array.isArray(parsed?.workspaces) ? parsed.workspaces : []
+  const ws = list.find((w: any) => w?.id === parsed?.active) ?? list[0]
+  if (!ws) return null
+  const cols: string[][] = Array.isArray(ws.columns) ? ws.columns : []
+  const widths: number[] = Array.isArray(ws.widths) ? ws.widths : []
+  const share = (i: number) => (Number.isFinite(widths[i]) ? widths[i] : 0)
+  const total = widths.reduce((a, _, i) => a + share(i), 0)
+  // The left pane inherits the width of every column folded into it, not just
+  // the first — otherwise a three-column layout arrives with two columns'
+  // worth of sections in a pane sized for one.
+  const leftShare = widths.reduce((a, _, i) => (i === 1 ? a : a + share(i)), 0)
+  return {
+    left: [...(cols[0] ?? []), ...cols.slice(2).flat(), ...(ws.full ?? [])],
+    right: cols[1] ?? [],
+    hidden: ws.hidden ?? [],
+    split: total > 0 ? leftShare / total : undefined,
+    heights: {},
+  }
 }
 
 export function useDashboardLayout() {
-  const workspaces = useState<Workspace[]>('dashboardWorkspaces', defaults)
-  const activeId = useState<string>('dashboardWorkspaceActive', () => PRESETS[0].id)
-  const editing = useState<boolean>('dashboardLayoutEditing', () => false)
-
-  const active = computed<Workspace>(
-    () => workspaces.value.find(w => w.id === activeId.value) ?? workspaces.value[0],
-  )
+  const layout = useState<SplitLayout>('dashboardSplit', defaults)
+  /**
+   * Whether the resize grips are showing. Off by default: the dashboard should
+   * open as a dashboard, not as its own settings, and a splitter handle on
+   * every panel edge is noise for the reader who never wants to move one.
+   */
+  const resizing = useState<boolean>('dashboardResizing', () => false)
 
   function load() {
     if (!import.meta.client) return
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) {
-        const parsed = JSON.parse(saved)
-        const list = (parsed.workspaces ?? []).map(reconcile)
-        if (list.length) {
-          workspaces.value = list
-          activeId.value = list.some((w: Workspace) => w.id === parsed.active)
-            ? parsed.active
-            : list[0].id
+        layout.value = reconcile(JSON.parse(saved))
+        return
+      }
+      // First run since the split panes shipped: carry whichever older
+      // preference is on this device across, so an adjusted dashboard survives
+      // the upgrade rather than silently resetting.
+      const workspaces = localStorage.getItem(WORKSPACES_KEY)
+      if (workspaces) {
+        const migrated = fromWorkspaces(JSON.parse(workspaces))
+        if (migrated) {
+          layout.value = reconcile(migrated)
+          persist()
         }
         return
       }
-      // First run since workspaces shipped: carry the old single layout across
-      // as Overview, so a customised dashboard survives the upgrade.
       const legacy = localStorage.getItem(LEGACY_KEY)
       if (legacy) {
         const l = JSON.parse(legacy)
-        const ws = defaults()
-        ws[0] = reconcile({
-          id: 'overview',
-          name: 'Overview',
-          columns: [l.main ?? [], l.side ?? []],
-          widths: [0.66, 0.34],
-          full: [],
-          hidden: l.hidden ?? [],
-        })
-        workspaces.value = ws
+        layout.value = reconcile({ left: l.main, right: l.side, hidden: l.hidden })
         persist()
       }
     } catch {
-      // Corrupt or unavailable storage: the presets are a fine answer.
+      // Corrupt or unavailable storage: the default arrangement is a fine answer.
     }
   }
 
   function persist() {
     if (!import.meta.client) return
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        active: activeId.value,
-        workspaces: workspaces.value,
-      }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(layout.value))
     } catch { /* ignore */ }
   }
 
   // ── Placing sections ──────────────────────────────────────────────
   function placementOf(id: string): Placement {
-    const i = active.value.columns.findIndex(c => c.includes(id))
-    if (i !== -1) return `c${i}`
-    if (active.value.full.includes(id)) return 'full'
+    if (layout.value.left.includes(id)) return 'left'
+    if (layout.value.right.includes(id)) return 'right'
     return 'hidden'
   }
 
-  function detach(w: Workspace, id: string) {
-    w.columns = w.columns.map(c => c.filter(x => x !== id))
-    w.full = w.full.filter(x => x !== id)
-    w.hidden = w.hidden.filter(x => x !== id)
+  function listFor(p: Placement): string[] {
+    const l = layout.value
+    return p === 'left' ? l.left : p === 'right' ? l.right : l.hidden
   }
 
   function place(id: string, to: Placement) {
-    const w = active.value
+    const l = layout.value
     if (placementOf(id) === to) return
-    detach(w, id)
-    if (to === 'full') w.full.push(id)
-    else if (to === 'hidden') w.hidden.push(id)
-    else {
-      const i = Math.min(Number(to.slice(1)), w.columns.length - 1)
-      w.columns[i].push(id)
-    }
+    l.left = l.left.filter(x => x !== id)
+    l.right = l.right.filter(x => x !== id)
+    l.hidden = l.hidden.filter(x => x !== id)
+    listFor(to).push(id)
     persist()
   }
 
-  /** Shift a section within whichever list it is already in. */
+  /** Shift a section up or down within the pane it is already in. */
   function nudge(id: string, delta: -1 | 1) {
-    const w = active.value
     const p = placementOf(id)
     if (p === 'hidden') return
-    const list = p === 'full' ? w.full : w.columns[Number(p.slice(1))]
+    const list = listFor(p)
     const i = list.indexOf(id)
     const j = i + delta
     if (i === -1 || j < 0 || j >= list.length) return
@@ -228,108 +229,34 @@ export function useDashboardLayout() {
     persist()
   }
 
-  // ── Columns ───────────────────────────────────────────────────────
-  function setColumnCount(n: number) {
-    const w = active.value
-    const count = Math.max(1, Math.min(MAX_COLUMNS, n))
-    if (count === w.columns.length) return
-    if (count < w.columns.length) {
-      // Removed columns give their sections to the last surviving one rather
-      // than dropping them — losing a panel to a layout tweak is never right.
-      const spill = w.columns.slice(count).flat()
-      w.columns = w.columns.slice(0, count)
-      w.columns[count - 1].push(...spill)
-    } else {
-      while (w.columns.length < count) w.columns.push([])
-    }
-    w.widths = normalise(w.widths, count)
-    persist()
-  }
-
-  /** Called continuously while a splitter is dragged; only the end persists. */
-  function setWidths(widths: number[], save = false) {
-    active.value.widths = normalise(widths, active.value.columns.length)
+  // ── Sizes ─────────────────────────────────────────────────────────
+  /** Called continuously while the divider is dragged; only the end persists. */
+  function setSplit(fraction: number, save = false) {
+    layout.value.split = clampSplit(fraction)
     if (save) persist()
   }
 
-  // ── Workspaces ────────────────────────────────────────────────────
-  function select(id: string) {
-    if (!workspaces.value.some(w => w.id === id)) return
-    activeId.value = id
+  /** Likewise for a section's height, dragged from its bottom edge. */
+  function setHeight(id: string, px: number, save = false) {
+    layout.value.heights[id] = Math.min(MAX_SECTION_PX, Math.max(MIN_SECTION_PX, Math.round(px)))
+    if (save) persist()
+  }
+
+  /** Give a section its content's height back. */
+  function clearHeight(id: string) {
+    if (!(id in layout.value.heights)) return
+    delete layout.value.heights[id]
     persist()
   }
 
-  function uniqueName(base: string): string {
-    const taken = new Set(workspaces.value.map(w => w.name))
-    if (!taken.has(base)) return base
-    let n = 2
-    while (taken.has(`${base} ${n}`)) n++
-    return `${base} ${n}`
-  }
-
-  function add() {
-    const w = reconcile({
-      id: `ws-${Date.now()}`,
-      name: uniqueName('New layout'),
-      // Starts with the chart and nothing else: built up deliberately rather
-      // than inherited by accident, but never a blank screen — an empty
-      // dashboard reads as a fault rather than as a starting point.
-      columns: [['portfolio'], []],
-      widths: [0.6, 0.4],
-      full: [],
-      hidden: SECTIONS.map(s => s.id).filter(id => id !== 'portfolio'),
-    })
-    workspaces.value.push(w)
-    activeId.value = w.id
-    persist()
-    editing.value = true
-  }
-
-  function duplicate() {
-    const copy = structuredClone(toRaw(active.value))
-    copy.id = `ws-${Date.now()}`
-    copy.name = uniqueName(`${active.value.name} copy`)
-    workspaces.value.push(copy)
-    activeId.value = copy.id
-    persist()
-  }
-
-  function rename(name: string) {
-    active.value.name = name.trim() || active.value.name
-    persist()
-  }
-
-  function remove(id: string) {
-    // There is always somewhere to be: the last workspace cannot be deleted.
-    if (workspaces.value.length <= 1) return
-    const i = workspaces.value.findIndex(w => w.id === id)
-    if (i === -1) return
-    workspaces.value.splice(i, 1)
-    if (activeId.value === id) activeId.value = workspaces.value[Math.max(0, i - 1)].id
-    persist()
-  }
-
-  /** Restore this workspace: to its preset if it is one, else to a plain split. */
   function reset() {
-    const preset = PRESETS.find(p => p.id === active.value.id)
-    const fresh = preset
-      ? reconcile(structuredClone(preset))
-      : reconcile({ id: active.value.id, name: active.value.name, columns: [[], []], widths: [0.66, 0.34] })
-    const i = workspaces.value.findIndex(w => w.id === active.value.id)
-    workspaces.value[i] = fresh
-    persist()
-  }
-
-  function resetAll() {
-    workspaces.value = defaults()
-    activeId.value = PRESETS[0].id
+    layout.value = defaults()
     persist()
   }
 
   return {
-    workspaces, activeId, active, editing, SECTIONS, MAX_COLUMNS, MIN_COLUMN_PX,
+    layout, resizing, SECTIONS, MIN_PANE_PX, MIN_SECTION_PX,
     load, persist, placementOf, place, nudge,
-    setColumnCount, setWidths,
-    select, add, duplicate, rename, remove, reset, resetAll,
+    setSplit, setHeight, clearHeight, reset,
   }
 }
