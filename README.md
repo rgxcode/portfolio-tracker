@@ -327,7 +327,12 @@ node backend/src/agents/opencodePriceAgent.js --once
 
 ## Deploying
 
-- **Frontend** — `cd frontend && npm run generate && npx wrangler deploy`.
+- **Frontend** — `cd frontend && npm run deploy`. That one script bakes the
+  production API URL, checks the output, and uploads; run the three steps by
+  hand and `nuxt generate` will read `frontend/.env` and quietly ship the
+  local API URL to every visitor. `npm run check:build` refuses a build
+  containing any `localhost:<port>`, which is the only symptom that failure
+  has until someone tries to log in.
   Output is `.output/public`; the `dist` symlink is a trap most hosts won't follow.
 - **API** — Render deploys `main` automatically from [`render.yaml`](render.yaml).
 - **Cron Worker** — `cd cron-worker && npx wrangler deploy`.
