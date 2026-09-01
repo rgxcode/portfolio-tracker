@@ -141,7 +141,16 @@ const lastName = ref('')
 const config = useRuntimeConfig()
 const route = useRoute()
 
-const providers = ref<{ google: boolean }>({ google: false })
+/**
+ * Assume Google is available rather than waiting to be told.
+ *
+ * The button used to render only after a round trip to the API, so the one
+ * thing this page exists to show was the last thing to appear — and on a free
+ * instance that has gone to sleep, that is a wait of up to a minute. The last
+ * known answer is remembered so a returning visitor never even flickers, and a
+ * deployment without Google configured corrects itself on the first reply.
+ */
+const providers = ref<{ google: boolean }>({ google: true })
 const oauthError = ref<string | null>(null)
 const googleUrl = computed(() => `${config.public.apiBaseUrl}/api/auth/google`)
 
@@ -161,12 +170,22 @@ onMounted(async () => {
 
   if (route.query.error) oauthError.value = String(route.query.error)
 
-  // Only offer a provider this deployment can actually complete.
+  // Remembered answer first, so there is nothing to wait for.
   try {
-    providers.value = await $fetch(`${config.public.apiBaseUrl}/api/auth/providers`)
-  } catch {
-    providers.value = { google: false }
-  }
+    const cached = localStorage.getItem('authProviders')
+    if (cached) providers.value = JSON.parse(cached)
+  } catch { /* private mode, or nothing stored */ }
+
+  // Then confirm, without blocking anything above.
+  $fetch<{ google: boolean }>(`${config.public.apiBaseUrl}/api/auth/providers`)
+    .then((res) => {
+      providers.value = res
+      try { localStorage.setItem('authProviders', JSON.stringify(res)) } catch { /* ignore */ }
+    })
+    .catch(() => {
+      // Unreachable API: leave the button up. Clicking it fails visibly, which
+      // is more useful than silently hiding the only way in.
+    })
 
   authStore.loadToken()
   if (authStore.token) {

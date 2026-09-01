@@ -26,6 +26,30 @@ const PERIODIC = [
   { workflow: 'insights.yml', hours: [6, 18] },
 ]
 
+/**
+ * The API, pinged to keep it awake.
+ *
+ * A free Render instance sleeps after about fifteen minutes idle and takes up
+ * to fifty seconds to wake — which lands on whoever arrives first, at the
+ * moment they are deciding whether the app works. This tick already runs every
+ * five minutes, so the ping is free and the instance never sleeps.
+ *
+ * Render's free tier allows 750 instance-hours a month against roughly 730 in a
+ * month, so one service can stay awake continuously. A second would not fit.
+ */
+const API_HEALTH = 'https://portfolio-tracker-api-hqcl.onrender.com/api/health'
+
+async function keepAwake() {
+  try {
+    const res = await fetch(API_HEALTH, { signal: AbortSignal.timeout(60000) })
+    return res.ok
+  } catch {
+    // A failed ping is not worth failing the tick over; the workflows that
+    // matter do not run on this instance.
+    return false
+  }
+}
+
 async function dispatch(workflow, token) {
   const res = await fetch(
     `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${workflow}/dispatches`,
@@ -63,13 +87,14 @@ async function runAll(env) {
     .filter(p => p.hours.includes(now.getUTCHours()) && now.getUTCMinutes() < 5)
     .map(p => p.workflow)
 
-  // Independent workflows, so fire them together rather than in sequence.
-  const results = await Promise.all(
-    [...WORKFLOWS, ...due].map(async w => [w, await dispatch(w, env.GITHUB_TOKEN)]),
-  )
+  // Independent work, so fire it all together rather than in sequence.
+  const [awake, ...results] = await Promise.all([
+    keepAwake(),
+    ...[...WORKFLOWS, ...due].map(async w => [w, await dispatch(w, env.GITHUB_TOKEN)]),
+  ])
   const summary = Object.fromEntries(results)
-  console.log('dispatched:', JSON.stringify(summary))
-  return { ok: results.every(([, v]) => v), dispatched: summary }
+  console.log('dispatched:', JSON.stringify(summary), '| api awake:', awake)
+  return { ok: results.every(([, v]) => v), dispatched: summary, apiAwake: awake }
 }
 
 export default {
