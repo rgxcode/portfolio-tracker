@@ -36,6 +36,17 @@ export default defineNuxtConfig({
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'description', content: 'Track your investment portfolio in real-time with charts and analytics.' },
       ],
+      // Inter is the design system's typeface. Preconnect first so the font
+      // request does not wait on a fresh TLS handshake, and `display=swap` so
+      // text is readable in the fallback while it loads rather than invisible.
+      link: [
+        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+        {
+          rel: 'stylesheet',
+          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap',
+        },
+      ],
     },
   },
 

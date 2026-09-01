@@ -2,18 +2,138 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Nocturne — the design system the redesign is built on.
+ *
+ * These are the tokens from the design file, kept as CSS custom properties so
+ * the palette has one source of truth. `tailwind.config.ts` maps them onto
+ * utility classes (`bg-n-surface`, `text-n-400`, `text-up`, …); the few places
+ * that need a colour inside an inline gradient or an SVG stop read the var
+ * directly.
+ *
+ * The app is dark-only by design, so there is no light palette to mirror.
+ */
+:root {
+  --n-bg: #161826;
+  --n-surface: #232532;
+  --n-text: #e9e9ed;
+  --n-accent: #9184d9;
+  --n-divider: rgba(233, 233, 237, 0.16);
+
+  /* Tonal ramp — one shared lightness scale, so the same step of any role
+     matches the others in visual value. */
+  --n-100: #f3f5fe;
+  --n-200: #e4e7f5;
+  --n-300: #cfd3e5;
+  --n-400: #b2b6ca;
+  --n-500: #9397ab;
+  --n-600: #75798c;
+  --n-700: #595d6c;
+  --n-800: #3f424d;
+  --n-900: #292b31;
+
+  --n-accent-100: #f5f4ff;
+  --n-accent-200: #e7e5fe;
+  --n-accent-300: #d2cefd;
+  --n-accent-400: #b5abfc;
+  --n-accent-500: #968ae0;
+  --n-accent-600: #796cbf;
+  --n-accent-700: #5d5294;
+  --n-accent-800: #423a6a;
+  --n-accent-900: #2b2741;
+
+  /* The only two extra colours in the file, kept muted so they read as data
+     rather than decoration. */
+  --n-up: #5fc99b;
+  --n-down: #e0798c;
+
+  /* Elevation: a hairline edge plus ambient darkness, not a drop shadow. */
+  --n-shadow-sm: 0 0 0 1px #3f424d;
+  --n-shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
+  --n-shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
+}
+
 @layer base {
   html {
     @apply antialiased;
   }
 
   body {
-    @apply bg-gray-900 text-gray-100;
+    background: var(--n-bg);
+    color: var(--n-text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+
+  /* Every figure in this app is read in a column against the one above it, so
+     the digits have to line up. Applied once here rather than per-component. */
+  body {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--n-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--n-accent) 30%, transparent);
+  }
+}
+
+@layer components {
+  /**
+   * A Nocturne rule fades to transparent at both ends instead of stopping
+   * cleanly — the system's signature. The ramp is 48px an end. Freestanding
+   * rules fade; box outlines and in-control separators stay solid.
+   */
+  .n-rule {
+    height: 1px;
+    border: 0;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--n-divider) 48px,
+      var(--n-divider) calc(100% - 48px),
+      transparent
+    );
+  }
+
+  /* The panel every dashboard card is built from. */
+  .n-card {
+    background: var(--n-surface);
+    border-radius: 10px;
+    box-shadow: var(--n-shadow-sm);
+  }
+
+  /* The small caps label above a number or a section. */
+  .n-kicker {
+    font-size: 10px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--n-500);
   }
 }
 
 @layer utilities {
   .animate-spin {
     animation: spin 1s linear infinite;
+  }
+
+  /**
+   * The ticker tape. The strip holds two identical copies of the list side by
+   * side and slides exactly half its width, so the moment the first copy has
+   * left the frame the second is sitting precisely where it started — the loop
+   * never shows a seam or a gap.
+   */
+  @keyframes n-tape {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  /* The live dot's halo. */
+  @keyframes n-pulse {
+    0% { opacity: 0.9; transform: scale(1); }
+    70% { opacity: 0; transform: scale(2.6); }
+    100% { opacity: 0; transform: scale(2.6); }
   }
 }
