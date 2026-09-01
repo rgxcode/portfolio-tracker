@@ -96,7 +96,7 @@ definePageMeta({ middleware: 'auth' })
 
 const store = usePortfolioStore()
 const {
-  refreshAllPrices, pollPrices, stockWindow, snapshotAt,
+  refreshAllPrices, pollPrices, stockWindow, snapshotAt, snapshotCET,
 } = useMarketData()
 
 /**
