@@ -1,22 +1,22 @@
 <template>
-  <div class="min-h-screen bg-n-bg text-n-text flex flex-col">
+  <div class="min-h-screen bg-n-bg text-n-text flex flex-col overflow-x-hidden">
     <!-- ── Header ──────────────────────────────────────────────────────── -->
     <header class="sticky top-0 z-50 bg-n-bg/95 backdrop-blur">
-      <nav class="flex items-center gap-[26px] px-5 h-[52px] border-b border-[rgba(233,233,237,.08)]">
-        <NuxtLink to="/" class="flex items-center gap-[9px] mr-2 shrink-0 no-underline text-n-text">
+      <nav class="flex items-center gap-4 sm:gap-[26px] px-4 sm:px-5 h-[52px] border-b border-[rgba(233,233,237,.08)]">
+        <NuxtLink to="/" class="flex items-center gap-[9px] sm:mr-2 shrink-0 no-underline text-n-text">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--n-accent)" stroke-width="2" stroke-linecap="round">
             <path d="M4 20V13M10 20V5M16 20V9M22 20V3" />
           </svg>
-          <span class="text-sm font-medium tracking-[-.01em]">Portfolio Tracker</span>
+          <span class="hidden sm:inline text-sm font-medium tracking-[-.01em]">Portfolio Tracker</span>
         </NuxtLink>
 
         <template v-if="authStore.isAuthenticated">
-          <div class="flex gap-0.5">
+          <div class="flex gap-0.5 min-w-0 overflow-x-auto no-scrollbar">
             <NuxtLink
               v-for="link in visibleLinks"
               :key="link.to"
               :to="link.to"
-              class="text-[13px] px-[11px] py-1.5 rounded-[7px] no-underline transition-colors"
+              class="text-[13px] px-[11px] py-1.5 rounded-[7px] no-underline transition-colors shrink-0"
               :class="$route.path === link.to
                 ? 'bg-[rgba(145,132,217,.14)] text-na-300'
                 : 'text-n-400 hover:bg-[rgba(233,233,237,.06)] hover:text-n-text'"
@@ -25,7 +25,7 @@
             </NuxtLink>
           </div>
 
-          <div class="ml-auto flex items-center gap-3.5">
+          <div class="ml-auto flex items-center gap-3.5 shrink-0">
             <!-- The lookup, as the design's inline field rather than a
                  separate control bar on the page below. -->
             <div class="hidden md:block w-[210px]">

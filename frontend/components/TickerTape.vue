@@ -6,18 +6,28 @@
     aria-label="Live prices for your holdings"
   >
     <!--
-      Two identical copies side by side in a strip twice the frame's width.
-      Sliding the strip exactly -50% lands copy two precisely where copy one
-      started, so the loop is seamless: no gap, no jump, no visible seam.
+      Two identical copies side by side, the strip sized by its contents.
+      Sliding it exactly -50% lands copy two precisely where copy one started,
+      so the loop is seamless: no gap, no jump, no visible seam.
+
+      The widths must come from the content (`w-max`), never from percentages.
+      Pinning each copy to half the strip — i.e. one frame — looks right only
+      while the prices happen to fit in a frame; on a phone they are several
+      times wider, and since the items refuse to wrap they overflow their copy
+      and land on top of the next one.
+
+      Each copy carries its own trailing gap as padding rather than the strip
+      spacing them, so one copy's width includes the space that follows it and
+      -50% stays exactly one copy.
     -->
     <div
-      class="flex w-[200%] tape"
+      class="flex w-max tape"
       :style="{ animationDuration: `${duration}s` }"
     >
       <div
         v-for="copy in 2"
         :key="copy"
-        class="flex items-center gap-[26px] flex-none w-1/2 pl-5 text-[11.5px]"
+        class="flex items-center gap-[26px] pr-[26px] flex-none text-[11.5px]"
         :aria-hidden="copy === 2 ? 'true' : undefined"
       >
         <span
@@ -98,11 +108,6 @@ function format(v: number): string {
      that runs off the edge. */
   .tape {
     animation: none;
-    width: 100%;
-  }
-
-  .tape > :first-child {
-    width: 100%;
   }
 
   .tape > :last-child {
