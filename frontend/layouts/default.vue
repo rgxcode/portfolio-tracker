@@ -2,7 +2,7 @@
   <div class="min-h-screen bg-gray-900 text-gray-100">
     <!-- Navigation -->
     <nav class="bg-gray-800/80 backdrop-blur border-b border-gray-700 sticky top-0 z-50">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="max-w-7xl 2xl:max-w-[110rem] mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
           <NuxtLink to="/" class="flex items-center gap-2 font-bold text-lg text-white">
             <svg class="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -43,7 +43,9 @@
       </div>
     </nav>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- max-w-7xl left a 1080p monitor mostly margin; the wider cap only
+         applies above it, so smaller screens are unchanged. -->
+    <main class="max-w-7xl 2xl:max-w-[110rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <slot />
     </main>
 

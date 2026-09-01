@@ -59,6 +59,14 @@
         </button>
       </div>
 
+      <!-- On a wide screen this becomes a dashboard rather than a column:
+           value and chart top-left, allocation to the right, holdings and
+           metrics below them — so the whole portfolio is visible at once
+           instead of being scrolled through. Below xl it stays a single
+           column, which is the right shape for a phone. -->
+      <div class="xl:grid xl:grid-cols-12 xl:gap-x-6 xl:items-start">
+        <div class="xl:col-span-8">
+
       <!-- Total Worth section -->
       <div class="mb-2">
         <div class="flex items-center justify-between">
@@ -112,7 +120,7 @@
 
       <!-- Portfolio chart -->
       <div class="mt-4 mb-2">
-        <div class="h-64 sm:h-72">
+        <div class="h-64 sm:h-72 xl:h-80 2xl:h-96">
           <PortfolioChart
             :labels="chartLabels"
             :values="chartValues"
@@ -217,15 +225,19 @@
         </div>
       </div>
 
-      <!-- ── Allocation & Metrics Section ─────────────────────────── -->
-      <div class="mt-8 pt-6 border-t border-gray-800">
+        </div><!-- /left column -->
+
+        <!-- Allocation and metrics: a sidebar on a wide screen, and the same
+             stacked sections as before on a narrow one. -->
+        <div class="xl:col-span-4">
+      <div class="mt-8 pt-6 border-t border-gray-800 xl:mt-0 xl:pt-0 xl:border-t-0">
         <h3 class="text-white font-bold text-lg mb-5">Allocation</h3>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4 mb-8">
           <!-- By Type -->
           <div class="bg-gray-800/50 rounded-2xl border border-gray-700 p-5">
             <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase mb-3">By Type</p>
-            <div class="h-72">
+            <div class="h-72 xl:h-64">
               <AllocationPieChart
                 :labels="typeAllocation.labels"
                 :values="typeAllocation.values"
@@ -237,7 +249,7 @@
           <!-- By Asset -->
           <div class="bg-gray-800/50 rounded-2xl border border-gray-700 p-5">
             <p class="text-gray-400 text-xs font-semibold tracking-wider uppercase mb-3">By Asset</p>
-            <div class="h-72">
+            <div class="h-72 xl:h-64">
               <AllocationPieChart
                 :labels="assetAllocation.labels"
                 :values="assetAllocation.values"
@@ -295,7 +307,10 @@
           </table>
         </div>
       </div>
-      <!-- LLM read of the holdings, below the portfolio itself -->
+        </div><!-- /right column -->
+      </div><!-- /dashboard grid -->
+
+      <!-- LLM read of the holdings, full width beneath the dashboard -->
       <PortfolioInsights />
     </template>
   </div>
