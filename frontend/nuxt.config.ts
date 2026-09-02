@@ -40,6 +40,11 @@ export default defineNuxtConfig({
       // request does not wait on a fresh TLS handshake, and `display=swap` so
       // text is readable in the fallback while it loads rather than invisible.
       link: [
+        // The app's own mark. SVG so it stays sharp at any size; the .ico is
+        // not provided, so browsers that ignore SVG icons simply show none
+        // rather than fetching a 404.
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { rel: 'apple-touch-icon', href: '/favicon.svg' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         {

@@ -1,0 +1,18 @@
+<!--
+  The app's own mark: the four ascending bars from the header logo, in the
+  Nocturne accent, on the Nocturne ground.
+
+  A filled tile rather than a bare glyph on transparent. A tab strip may be
+  light or dark depending on the browser and the theme, and a stroked mark with
+  no ground disappears into one of them. The bars are drawn a little heavier
+  than in the header — at 16px a 2px stroke on a 24-unit grid renders thin.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="7" fill="#161826"/>
+  <g stroke="#9184d9" stroke-width="3" stroke-linecap="round" fill="none">
+    <path d="M7 25V17"/>
+    <path d="M13 25V9"/>
+    <path d="M19 25V14"/>
+    <path d="M25 25V7"/>
+  </g>
+</svg>

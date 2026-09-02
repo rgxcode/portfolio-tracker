@@ -400,5 +400,41 @@ onMounted(async () => {
 // Reload chart when tab changes
 watch(activeTab, () => loadChart())
 
-useHead({ title: 'Home – Portfolio Tracker' })
+/**
+ * What the browser tab says.
+ *
+ * The total goes first so it survives the truncation a narrow tab applies —
+ * the point is to read the portfolio at a glance from a background tab, and a
+ * title that has to be widened to show the number is no use for that.
+ *
+ * Whole units, no cents: a tab has room for one fact, and the cents on a
+ * five-figure balance are not it. The figure is in the currency currently
+ * selected on the dashboard, so the tab never disagrees with the page.
+ *
+ * It follows the whole portfolio rather than the type filter — a tab reading
+ * "$15,061" because Stocks happened to be selected would be a quiet lie about
+ * net worth.
+ *
+ * No total, no number: before the assets load, and for someone who has not
+ * added any, this is the plain title rather than "$0.00".
+ */
+const tabTitle = computed(() => {
+  const total = convert(store.totalValue)
+  // Anything that would not round to at least a cent has no number worth
+  // printing, and printing it anyway produces the "$0.00" this is meant to
+  // avoid. Covers the empty portfolio, the not-yet-loaded one, and a balance
+  // too small to render.
+  if (!Number.isFinite(total) || total < 0.005) return 'Home – Portfolio Tracker'
+  // Whole units read best, but rounding a small balance to zero would print
+  // the one thing this is not allowed to say. Under a unit, the cents are the
+  // number.
+  const amount = total >= 1
+    ? Math.round(total).toLocaleString('en-US')
+    : total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${currencySymbol.value}${amount} · Portfolio Tracker`
+})
+
+// Re-rendered whenever the total changes, which the 30-second poll and any
+// manual refresh both do — so the tab keeps up without a timer of its own.
+useHead({ title: tabTitle })
 </script>
