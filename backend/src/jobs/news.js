@@ -43,7 +43,17 @@ export function newsQuery(symbol, type) {
 }
 
 export async function fetchNews(symbol, type, limit = 8) {
-  if (!(await consume('yahoo'))) return []
+  /**
+   * News has its own allowance, separate from the price job's.
+   *
+   * Exhaustion throws rather than returning an empty list: an empty list means
+   * "nothing was published about this", and reporting a spent budget that way
+   * made every holding look like it had no coverage, with nothing in the log
+   * to say otherwise.
+   */
+  if (!(await consume('yahooNews'))) {
+    throw new Error('daily news budget exhausted')
+  }
 
   const q = encodeURIComponent(newsQuery(symbol, type))
   const res = await fetch(`${SEARCH}?q=${q}&newsCount=${limit}&quotesCount=0`, {

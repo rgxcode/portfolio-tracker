@@ -16,10 +16,19 @@ import { TZ } from './marketHours.js'
  * short of it rather than discovering it by being throttled.
  *   Alpha Vantage free tier: 25 req/day  → we allow 20
  *   Yahoo (unofficial):      no published limit → we self-limit to stay polite
+ *
+ * Yahoo is split in two because prices and news are different endpoints with
+ * very different rhythms, and one shared pool let the greedier one starve the
+ * other. The price job runs every fifteen minutes and spends its allowance
+ * steadily through the day; article search then found nothing left and every
+ * holding was reported as having no coverage — a starved budget and a quiet
+ * news day looked identical. Separate counters mean neither can take the
+ * other's.
  */
 export const CAPS = {
   alphavantage: 20,
   yahoo: 800,
+  yahooNews: 400,
   coingecko: 2000,
   kraken: 5000,
   binance: 5000,
