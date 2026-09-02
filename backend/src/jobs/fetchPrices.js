@@ -231,6 +231,14 @@ async function main() {
     process.exit(1)
   }
 
+  // ── Exchange rates ──────────────────────────────────────────────
+  // Fetched before stocks, not after: a listing quoted in euros is converted
+  // as it arrives, so the rates have to be in hand by then.
+  const fxRates = (await fetchFxRates()) ?? previous?.fxRates ?? null
+  // Kept alongside the full map: the currency toggle has read `eurRate` since
+  // long before cash existed, and older clients still do.
+  const eurRate = fxRates?.EUR ?? previous?.eurRate ?? 0.86
+
   // ── Stocks: only inside the CET window, at most every 15 min ────
   const windowStatus = stockWindowStatus()
   let stocks = previous?.stocks ?? {}
@@ -242,6 +250,7 @@ async function main() {
     const fetched = await fetchStockPrices(symbols, {
       alphaVantageKey: process.env.ALPHA_VANTAGE_API_KEY || process.env.NUXT_PUBLIC_ALPHA_VANTAGE_API_KEY,
       previous: stocks,
+      fxRates,
       log,
     })
     if (Object.keys(fetched).length > 0) {
@@ -268,10 +277,6 @@ async function main() {
     log(`Commodities failed (${err.message}) — keeping the previous values.`)
   }
 
-  const fxRates = (await fetchFxRates()) ?? previous?.fxRates ?? null
-  // Kept alongside the full map: the currency toggle has read `eurRate` since
-  // long before cash existed, and older clients still do.
-  const eurRate = fxRates?.EUR ?? previous?.eurRate ?? 0.86
   const now = new Date().toISOString()
 
   await saveSnapshot(STANDARD, {

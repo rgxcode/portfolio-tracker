@@ -129,6 +129,10 @@
             >
               <span class="font-semibold text-white text-sm w-14 shrink-0">{{ s.symbol }}</span>
               <span class="text-gray-300 text-sm truncate">{{ s.name }}</span>
+              <!-- The same fund trades on a dozen European venues at
+                   genuinely different prices, so the venue is part of the
+                   identity, not a detail. -->
+              <span v-if="s.exchange" class="text-[10px] text-gray-500 shrink-0">{{ s.exchange }}</span>
               <!-- A fund and a share are added identically, so the label is
                    the only thing distinguishing SOXX from NVDA in this list. -->
               <span
@@ -171,7 +175,9 @@
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Purchase Price (USD)</label>
+          <label class="block text-sm font-medium text-gray-300 mb-1">
+            Purchase price ({{ priceCurrency }})
+          </label>
           <input
             v-model.number="form.purchasePrice"
             type="number"
@@ -184,6 +190,21 @@
         </div>
       </div>
 
+      </template>
+
+      <!-- What the chosen line costs now, and what the entered price becomes. -->
+      <p v-if="quoteLoading" class="text-gray-500 text-xs">Checking the current price…</p>
+      <template v-else-if="quote">
+        <p class="text-gray-400 text-xs">
+          {{ quote.symbol }} trades on {{ quote.exchange || 'its exchange' }} in {{ quote.quoteCurrency }} ·
+          currently {{ quote.quotePrice.toLocaleString('en-US', { maximumFractionDigits: 4 }) }}
+          {{ quote.quoteCurrency }}
+          <span v-if="isForeignCurrency">(${{ quote.price.toFixed(2) }})</span>
+        </p>
+        <p v-if="isForeignCurrency && (form.purchasePrice ?? 0) > 0" class="text-gray-500 text-xs">
+          Stored as ${{ (form.purchasePrice! * usdPerUnit).toFixed(2) }} per unit — converted at today's
+          rate, since the portfolio is kept in dollars.
+        </p>
       </template>
 
       <!-- Crypto hint -->
@@ -267,7 +288,10 @@ async function handleSubmit() {
     // A unit of currency is booked at what it is worth now, so a balance
     // starts level and only shows a gain once the rate has actually moved.
     // USD against USD is 1 by definition and never waits on a rate.
-    purchasePrice: isCash ? unitCostInUsd(code) : form.purchasePrice!,
+    // Entered in the currency the exchange quotes, stored in dollars: every
+    // total in the app is a dollar total, and mixing units inside one column
+    // is how a portfolio quietly stops adding up.
+    purchasePrice: isCash ? unitCostInUsd(code) : form.purchasePrice! * usdPerUnit.value,
     ...(isCash ? { currency: code } : {}),
   })
 
@@ -279,6 +303,7 @@ async function handleSubmit() {
   form.name = ''
   form.quantity = null
   form.purchasePrice = null
+  quote.value = null
 
   emit('added')
 }
@@ -291,11 +316,21 @@ async function handleSubmit() {
  * price jobs actually know about.
  */
 const { apiFetch } = useApi()
-const suggestions = ref<Array<{ symbol: string, name: string, type: string, isEtf?: boolean }>>([])
+const suggestions = ref<Array<{
+  symbol: string
+  name: string
+  type: string
+  isEtf?: boolean
+  exchange?: string | null
+  foreign?: boolean
+}>>([])
 let lookupTimer: ReturnType<typeof setTimeout> | null = null
 
 function onSymbolInput() {
   form.symbol = String(form.symbol ?? '').toUpperCase()
+  // The old quote belonged to the old symbol; keeping it would label the price
+  // field with a currency that is no longer the one being entered.
+  quote.value = null
   if (lookupTimer) clearTimeout(lookupTimer)
   lookupTimer = setTimeout(lookupSymbol, 150)
 }
@@ -336,7 +371,48 @@ function applySuggestion(s: { symbol: string, name: string, type: string }) {
   form.name = s.name
   form.type = s.type
   suggestions.value = []
+  if (s.type === 'stock') loadQuote(s.symbol)
 }
+
+/**
+ * What the chosen line currently costs, and in which currency.
+ *
+ * A European listing is quoted in euros, and someone entering what they paid
+ * for VVSM.DE is thinking in euros. Without asking, that figure would be stored
+ * as dollars and the holding would carry a cost basis that was never true.
+ */
+const quote = ref<{
+  symbol: string
+  price: number
+  quoteCurrency: string
+  quotePrice: number
+  exchange: string | null
+} | null>(null)
+const quoteLoading = ref(false)
+
+/** The currency the purchase price is being entered in. */
+const priceCurrency = computed(() => quote.value?.quoteCurrency ?? 'USD')
+const isForeignCurrency = computed(() => priceCurrency.value !== 'USD')
+
+async function loadQuote(symbol: string) {
+  quote.value = null
+  quoteLoading.value = true
+  try {
+    quote.value = await apiFetch(`/api/fundamentals/quote/${encodeURIComponent(symbol)}`)
+  } catch {
+    // No quote is not a blocker: the price field then means dollars, which is
+    // what it has always meant.
+  } finally {
+    quoteLoading.value = false
+  }
+}
+
+/** Dollars per unit of the quote currency, from the two figures we were given. */
+const usdPerUnit = computed(() => {
+  const q = quote.value
+  if (!q || !q.quotePrice) return 1
+  return q.price / q.quotePrice
+})
 
 function closeSuggestionsSoon() {
   setTimeout(() => { suggestions.value = [] }, 120)

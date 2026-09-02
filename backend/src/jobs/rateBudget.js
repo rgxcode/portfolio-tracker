@@ -29,6 +29,7 @@ export const CAPS = {
   alphavantage: 20,
   yahoo: 800,
   yahooNews: 400,
+  yahooSearch: 600,
   coingecko: 2000,
   kraken: 5000,
   binance: 5000,

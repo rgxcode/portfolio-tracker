@@ -10,6 +10,8 @@ import { COMMODITIES } from '../jobs/commodities.js'
 import Listing from '../models/Listing.js'
 import { cikFor } from '../jobs/listings.js'
 import { ensureHistory, hasNoHistory } from '../jobs/onDemandHistory.js'
+import { consume } from '../jobs/rateBudget.js'
+import { fetchStockPrices } from '../jobs/stocks.js'
 import { formatCET } from '../jobs/marketHours.js'
 import { computeMetrics, priceRange52w, PROVIDER_ONLY } from '../jobs/metrics.js'
 
@@ -136,6 +138,83 @@ async function currentQuote(symbol) {
  * Backed by the stored index membership, so it costs nothing and works whether
  * or not the metered provider has anything left.
  */
+
+/**
+ * Instruments Yahoo knows about that our own universe does not — chiefly
+ * listings outside the US.
+ *
+ * The symbol carries its exchange as a suffix (VVSM.DE for Xetra), which is
+ * also how prices are fetched, so what is stored is exactly what can be
+ * priced. That matters more than it looks: the same fund trades on a dozen
+ * European venues at genuinely different prices, and VVSM.F is a different
+ * line from VVSM.DE, not the same one seen from elsewhere.
+ */
+async function searchYahoo(q) {
+  const url = `https://query2.finance.yahoo.com/v1/finance/search`
+    + `?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error(`yahoo search HTTP ${res.status}`)
+
+  const quotes = (await res.json())?.quotes ?? []
+  return quotes
+    // Tradeable lines only: an index or a currency pair is not something
+    // anyone can hold, and offering one invites a holding that never prices.
+    .filter(x => ['EQUITY', 'ETF', 'MUTUALFUND'].includes(x.quoteType))
+    .filter(x => typeof x.symbol === 'string' && x.symbol.length <= 24)
+    .map(x => ({
+      symbol: x.symbol.toUpperCase(),
+      name: x.shortname || x.longname || x.symbol,
+      sector: x.quoteType === 'ETF' ? 'ETF' : null,
+      type: 'stock',
+      isEtf: x.quoteType === 'ETF',
+      /** Where it trades, so two listings of one fund can be told apart. */
+      exchange: x.exchDisp || x.exchange || null,
+      foreign: true,
+    }))
+}
+
+/**
+ * GET /api/fundamentals/quote/:symbol — what this line costs right now.
+ *
+ * The add form needs it for one reason: a European listing is quoted in its own
+ * currency, and someone entering what they paid for VVSM.DE is thinking in
+ * euros. Without knowing that, the figure would be stored as dollars and the
+ * holding would show a cost basis that was never true.
+ *
+ * Live rather than from the snapshot, because the snapshot only covers what
+ * someone already holds — and this is asked precisely when they do not yet.
+ */
+router.get('/quote/:symbol', async (req, res, next) => {
+  try {
+    const symbol = String(req.params.symbol ?? '').toUpperCase().trim()
+    if (!symbol) return res.status(400).json({ error: 'A symbol is required' })
+
+    const snap = await loadSnapshot(STANDARD)
+    const rates = snap?.fxRates ?? null
+
+    const [quote] = Object.values(
+      await fetchStockPrices([symbol], { fxRates: rates, budget: 'yahooSearch' }),
+    )
+    if (!quote) return res.status(404).json({ error: `No price found for ${symbol}` })
+
+    res.json({
+      symbol,
+      /** Always dollars — what the app stores and totals in. */
+      price: +quote.price.toFixed(6),
+      /** What the exchange actually quoted, when that is not dollars. */
+      quoteCurrency: quote.quoteCurrency ?? 'USD',
+      quotePrice: +(quote.quotePrice ?? quote.price).toFixed(6),
+      exchange: quote.exchange ?? null,
+      asOf: quote.asOf ?? null,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.get('/search', async (req, res, next) => {
   try {
     const q = String(req.query.q ?? '').trim()
@@ -223,6 +302,28 @@ router.get('/search', async (req, res, next) => {
         if (results.length >= 8) break
       }
       if (results.length >= 8) break
+    }
+
+    // Nothing here knows about listings outside the US: the SEC and Nasdaq
+    // files cover US exchanges only, so a European line like the VanEck
+    // Semiconductor UCITS ETF simply is not in the universe. Yahoo's own
+    // search does know, so it fills in when we come up short — one request,
+    // only when the local answer is thin, and only after the local answer has
+    // had its say, so a familiar US ticker is never pushed down the list by a
+    // foreign line that merely matches.
+    if (results.length < 5 && q.length >= 2 && await consume('yahooSearch')) {
+      try {
+        const foreign = await searchYahoo(q)
+        for (const f of foreign) {
+          if (seen.has(f.symbol)) continue
+          seen.add(f.symbol)
+          results.push(f)
+          if (results.length >= 8) break
+        }
+      } catch {
+        // The local answer stands. A lookup that cannot reach Yahoo should
+        // return what it has rather than fail the whole search.
+      }
     }
 
     res.json({ results })
