@@ -3,7 +3,7 @@
     <div class="flex items-center justify-between mb-8">
       <div>
         <h1 class="text-2xl font-bold text-white">Manage Assets</h1>
-        <p class="text-gray-400 text-sm mt-1">Add, view, and remove assets from your portfolio</p>
+        <p class="text-gray-400 text-sm mt-1">Add, edit, and remove the holdings in your portfolio</p>
       </div>
       <NuxtLink
         to="/"
@@ -44,6 +44,10 @@
           <span class="text-gray-500 font-normal text-sm ml-1">({{ store.assets.length }})</span>
         </h2>
 
+        <div v-if="store.error" class="mb-3 bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-300 text-sm">
+          {{ store.error }}
+        </div>
+
         <div v-if="store.assets.length === 0" class="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center text-gray-500">
           <p>No assets added yet. Use the form to add your first investment.</p>
         </div>
@@ -53,6 +57,7 @@
             v-for="asset in store.sortedAssets"
             :key="asset.id"
             v-bind="asset"
+            :on-save="patch => store.updateAsset(asset.id, patch)"
             @remove="store.removeAsset(asset.id)"
           />
         </div>
@@ -93,7 +98,8 @@ onMounted(() => {
 })
 
 function onAssetAdded() {
-  // Asset was added via the form; store already updated
+  // The store already holds the result — adding folds into an existing holding
+  // rather than appending, and it merged the reply over that row itself.
 }
 
 useHead({ title: 'Manage Assets – Portfolio Tracker' })

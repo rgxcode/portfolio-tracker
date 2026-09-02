@@ -136,6 +136,34 @@ export const usePortfolioStore = defineStore('portfolio', {
       }
     },
 
+    /**
+     * Correct a holding in place.
+     *
+     * Adding to a position folds into it rather than making a second row, so a
+     * mistyped quantity can no longer be fixed by deleting one of two rows —
+     * there has to be a way to set the position outright.
+     */
+    async updateAsset(
+      id: string,
+      patch: { name?: string, quantity?: number, purchasePrice?: number },
+    ) {
+      const { apiFetch } = useApi()
+      try {
+        const saved = normalizeAsset(await apiFetch<any>(`/api/assets/${id}`, {
+          method: 'PATCH',
+          body: patch,
+        }))
+        const idx = this.assets.findIndex(a => a.id === id)
+        // Merged over the existing row rather than replacing it: the reply
+        // carries what is stored, while the live price and its timestamps are
+        // only ever known here.
+        if (idx !== -1) this.assets[idx] = { ...this.assets[idx], ...saved }
+      } catch (err: any) {
+        this.error = err?.data?.error || err?.message || 'Failed to update asset'
+        throw err
+      }
+    },
+
     async removeAsset(id: string) {
       const { apiFetch } = useApi()
       try {
