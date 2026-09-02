@@ -55,7 +55,22 @@ try {
 }
 
 const COINGECKO_URL = 'https://api.coingecko.com/api/v3/simple/price'
-const FX_URL = 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR'
+/**
+ * Currencies a cash balance can be held in, and the rates the dashboard
+ * converts with. All ECB reference rates, from the same free endpoint the euro
+ * rate has always come from — one request covers the lot, so supporting the
+ * list costs no more than supporting the euro did.
+ *
+ * USD is deliberately absent: it is the base, its rate is 1, and asking the
+ * endpoint for it would only invite a null to divide by.
+ */
+export const CASH_CURRENCIES = [
+  'EUR', 'GBP', 'INR', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SGD', 'HKD',
+  'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'NZD', 'ZAR', 'BRL', 'MXN', 'KRW',
+  'TRY', 'THB', 'MYR', 'IDR', 'PHP', 'ILS', 'HUF', 'RON',
+]
+
+const FX_URL = `https://api.frankfurter.dev/v1/latest?base=USD&symbols=${CASH_CURRENCIES.join(',')}`
 const TIMEOUT_MS = 20000
 const MONGO_URL =
   process.env.MONGODB_URI
@@ -157,10 +172,25 @@ async function fetchCryptoPrices() {
   return prices
 }
 
-async function fetchEurRate() {
+/**
+ * Units of each currency per US dollar.
+ *
+ * Returns null rather than a partial map on failure, so a bad response cannot
+ * quietly halve someone's cash: the caller keeps the previous snapshot's rates
+ * instead, which are stale but coherent.
+ */
+async function fetchFxRates() {
   try {
     const data = await getJson(FX_URL)
-    return data?.rates?.EUR ?? null
+    const rates = data?.rates
+    if (!rates || typeof rates !== 'object') return null
+
+    const clean = {}
+    for (const code of CASH_CURRENCIES) {
+      const rate = Number(rates[code])
+      if (Number.isFinite(rate) && rate > 0) clean[code] = rate
+    }
+    return Object.keys(clean).length ? clean : null
   } catch (err) {
     log('FX rate fetch failed (keeping previous):', err.message)
     return null
@@ -238,7 +268,10 @@ async function main() {
     log(`Commodities failed (${err.message}) — keeping the previous values.`)
   }
 
-  const eurRate = (await fetchEurRate()) ?? previous?.eurRate ?? 0.86
+  const fxRates = (await fetchFxRates()) ?? previous?.fxRates ?? null
+  // Kept alongside the full map: the currency toggle has read `eurRate` since
+  // long before cash existed, and older clients still do.
+  const eurRate = fxRates?.EUR ?? previous?.eurRate ?? 0.86
   const now = new Date().toISOString()
 
   await saveSnapshot(STANDARD, {
@@ -246,6 +279,7 @@ async function main() {
     updatedAtCET: formatCET(now),
     baseCurrency: 'USD',
     eurRate,
+    fxRates,
     crypto,
     stocks,
     commodities,

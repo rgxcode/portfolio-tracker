@@ -8,7 +8,9 @@ export interface Asset {
   _id?: string
   symbol: string
   name: string
-  type: 'crypto' | 'stock'
+  type: 'crypto' | 'stock' | 'commodity' | 'cash'
+  /** Cash only: the ISO 4217 code the balance is held in. */
+  currency?: string | null
   quantity: number
   purchasePrice: number
   currentPrice: number
@@ -116,11 +118,18 @@ export const usePortfolioStore = defineStore('portfolio', {
     async addAsset(asset: Omit<Asset, 'id' | '_id' | 'currentPrice' | 'change24h' | 'lastUpdated'>) {
       const { apiFetch } = useApi()
       try {
-        const created = await apiFetch<any>('/api/assets', {
+        const saved = normalizeAsset(await apiFetch<any>('/api/assets', {
           method: 'POST',
           body: asset,
-        })
-        this.assets.unshift(normalizeAsset(created))
+        }))
+        // Adding to something already held folds into that row rather than
+        // making a second one, so the reply can be an existing holding. Putting
+        // it back at the top unconditionally would show the same asset twice —
+        // exactly the fault the merge exists to prevent, reintroduced in the
+        // client.
+        const idx = this.assets.findIndex(a => a.id === saved.id)
+        if (idx === -1) this.assets.unshift(saved)
+        else this.assets[idx] = { ...this.assets[idx], ...saved }
       } catch (err: any) {
         this.error = err?.data?.error || err?.message || 'Failed to add asset'
         throw err

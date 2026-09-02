@@ -119,10 +119,11 @@ const assetTabs = [
   { label: 'All', value: 'all' },
   { label: 'Crypto', value: 'crypto' },
   { label: 'Stocks', value: 'stock' },
-  { label: 'Commodities', value: 'commodity' },
+  { label: 'Metals', value: 'commodity' },
+  { label: 'Cash', value: 'cash' },
 ] as const
 
-type TabValue = 'all' | 'crypto' | 'stock' | 'commodity'
+type TabValue = 'all' | 'crypto' | 'stock' | 'commodity' | 'cash'
 const activeTab = ref<TabValue>('all')
 
 const filteredAssets = computed(() => {
@@ -277,6 +278,7 @@ const TYPE_LABELS: Record<string, string> = {
   crypto: 'Crypto',
   stock: 'Stocks',
   commodity: 'Commodities',
+  cash: 'Cash',
 }
 const typeLabel = (t: string) =>
   TYPE_LABELS[t] ?? (t ? t[0].toUpperCase() + t.slice(1) : 'Other')
@@ -289,7 +291,7 @@ const typeAllocation = computed(() => {
   }
   // Fixed order, so a slice keeps its colour as holdings come and go rather
   // than being repainted by whichever type happens to sort first.
-  const order = ['Crypto', 'Stocks', 'Commodities']
+  const order = ['Crypto', 'Stocks', 'Commodities', 'Cash']
   const labels = Object.keys(typeMap).sort(
     (a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99),
   )

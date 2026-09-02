@@ -59,6 +59,8 @@ export function useMarketData() {
     stocksUpdatedAtCET: string | null
     stocksAgeMinutes: number | null
     stockWindow: { open: boolean, status: string, hoursCET: string }
+    /** Units of each currency per US dollar. Cash is priced from this. */
+    fxRates?: Record<string, number> | null
   }
 
   /** Window status from the last snapshot, for display in the UI. */
@@ -69,6 +71,8 @@ export function useMarketData() {
   const snapshotAt = useState<string | null>('snapshotAt', () => null)
   /** Coins the backend actually tracks — the list the Add Asset form validates against. */
   const supportedCrypto = useState<string[]>('supportedCrypto', () => [])
+  /** Currencies a cash balance can be held in, and what each is worth. */
+  const fxRates = useState<Record<string, number> | null>('fxRates', () => null)
 
   /**
    * Which snapshot the dashboard reads.
@@ -123,7 +127,26 @@ export function useMarketData() {
     snapshotAt.value = data.updatedAt
     supportedCrypto.value = Object.keys(data.crypto ?? {})
 
+    if (data.fxRates) fxRates.value = data.fxRates
+
     for (const asset of store.assets) {
+      /**
+       * Cash is priced from the FX table rather than from a quote: one unit is
+       * worth whatever a dollar buys of it, inverted. A dollar is worth a
+       * dollar, so USD never needs a rate and never waits on one.
+       */
+      if (asset.type === 'cash') {
+        const code = (asset.currency ?? asset.symbol).toUpperCase()
+        const rate = code === 'USD' ? 1 : data.fxRates?.[code]
+        if (!rate) continue
+        store.updateAssetPrice(asset.id, 1 / rate, 0, {
+          asOf: data.updatedAt,
+          asOfCET: data.updatedAtCET,
+          source: code === 'USD' ? 'base currency' : 'ECB reference rate',
+        }, persist)
+        continue
+      }
+
       const bucket = asset.type === 'crypto'
         ? data.crypto
         : asset.type === 'commodity'
@@ -182,6 +205,7 @@ export function useMarketData() {
     loadSupportedCrypto,
     supportedCrypto,
     stockWindow,
+    fxRates,
     snapshotCET,
     snapshotAt,
     priceSource,

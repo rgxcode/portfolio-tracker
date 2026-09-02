@@ -37,9 +37,62 @@
           >
             🥇 Metal
           </button>
+          <button
+            type="button"
+            class="flex-1 py-2 rounded-lg text-sm font-medium border transition-colors"
+            :class="form.type === 'cash'
+              ? 'bg-emerald-600 border-emerald-500 text-white'
+              : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'"
+            @click="form.type = 'cash'"
+          >
+            💵 Cash
+          </button>
         </div>
       </div>
 
+      <!--
+        Cash is a balance in a currency, so it asks for those two things
+        instead of a ticker, a name and a unit price. The currency doubles as
+        the symbol; the rate that turns it into dollars comes from the price
+        snapshot, so nothing here has to be priced by hand.
+      -->
+      <template v-if="form.type === 'cash'">
+        <div>
+          <label for="cash-currency" class="block text-sm font-medium text-gray-300 mb-1">Currency</label>
+          <select
+            id="cash-currency"
+            v-model="form.symbol"
+            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option v-for="c in CURRENCIES" :key="c.code" :value="c.code">
+              {{ c.code }} — {{ c.name }}
+            </option>
+          </select>
+        </div>
+
+        <div>
+          <label for="cash-amount" class="block text-sm font-medium text-gray-300 mb-1">
+            Amount
+            <span class="text-gray-500 font-normal">held in {{ form.symbol || 'this currency' }}</span>
+          </label>
+          <input
+            id="cash-amount"
+            v-model.number="form.quantity"
+            type="number"
+            required
+            min="0.01"
+            step="any"
+            placeholder="20000"
+            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <p class="text-xs text-gray-500 mt-1">
+            Converted at the current rate. A balance in a currency that moves against the
+            dollar shows that move as a gain or a loss, which is what holding it does.
+          </p>
+        </div>
+      </template>
+
+      <template v-else>
       <!-- Symbol -->
       <div>
         <label class="block text-sm font-medium text-gray-300 mb-1">
@@ -128,6 +181,8 @@
         </div>
       </div>
 
+      </template>
+
       <!-- Crypto hint -->
       <p v-if="form.type === 'crypto' && !isSupportedCrypto" class="text-yellow-400 text-xs">
         ⚠️ Symbol not in the auto-fetch list. Price will not be auto-updated. Supported symbols:
@@ -147,11 +202,26 @@
 
 <script setup lang="ts">
 import { useMarketData } from '~/composables/useMarketData'
+import { CURRENCIES, currencyName } from '~/utils/assetUnits'
 
 const emit = defineEmits<{ added: [] }>()
 
 const store = usePortfolioStore()
-const { refreshAllPrices, loadSupportedCrypto, supportedCrypto } = useMarketData()
+const { refreshAllPrices, loadSupportedCrypto, supportedCrypto, fxRates } = useMarketData()
+
+/**
+ * What one unit of a currency costs in dollars, right now.
+ *
+ * Falls back to 1 when the rate is not loaded yet. That books the balance at
+ * parity, which is wrong for the cost basis but self-correcting: the next
+ * price refresh sets the real value, and the alternative — refusing to save —
+ * loses the entry over a table that arrives a moment later.
+ */
+function unitCostInUsd(code: string): number {
+  if (code === 'USD') return 1
+  const rate = fxRates.value?.[code]
+  return rate && rate > 0 ? 1 / rate : 1
+}
 
 // The tracked-coin list comes from the backend, so the form and the price job
 // can never disagree about which symbols are supported.
@@ -159,19 +229,20 @@ const supportedSymbols = computed(() => supportedCrypto.value)
 onMounted(loadSupportedCrypto)
 
 const form = reactive({
-  type: 'crypto' as 'crypto' | 'stock' | 'commodity',
+  type: 'crypto' as 'crypto' | 'stock' | 'commodity' | 'cash',
   symbol: '',
   name: '',
   quantity: null as number | null,
   purchasePrice: null as number | null,
 })
 
-const isValid = computed(() =>
-  form.symbol.trim().length > 0
-  && form.name.trim().length > 0
-  && (form.quantity ?? 0) > 0
-  && (form.purchasePrice ?? 0) > 0,
-)
+const isValid = computed(() => {
+  if (form.symbol.trim().length === 0 || (form.quantity ?? 0) <= 0) return false
+  // Cash needs no name and no unit price: the currency names it, and what one
+  // unit is worth is an exchange rate rather than something anyone types.
+  if (form.type === 'cash') return true
+  return form.name.trim().length > 0 && (form.purchasePrice ?? 0) > 0
+})
 
 const isSupportedCrypto = computed(() => {
   if (form.type !== 'crypto') return true
@@ -182,12 +253,19 @@ const isSupportedCrypto = computed(() => {
 async function handleSubmit() {
   if (!isValid.value) return
 
+  const isCash = form.type === 'cash'
+  const code = form.symbol.trim().toUpperCase()
+
   await store.addAsset({
-    symbol: form.symbol.trim(),
-    name: form.name.trim(),
+    symbol: code,
+    name: isCash ? currencyName(code) : form.name.trim(),
     type: form.type,
     quantity: form.quantity!,
-    purchasePrice: form.purchasePrice!,
+    // A unit of currency is booked at what it is worth now, so a balance
+    // starts level and only shows a gain once the rate has actually moved.
+    // USD against USD is 1 by definition and never waits on a rate.
+    purchasePrice: isCash ? unitCostInUsd(code) : form.purchasePrice!,
+    ...(isCash ? { currency: code } : {}),
   })
 
   // Attempt to fetch current price immediately
@@ -235,8 +313,18 @@ async function lookupSymbol() {
   }
 }
 
-watch(() => form.type, () => {
+watch(() => form.type, (type) => {
   suggestions.value = []
+  if (type === 'cash') {
+    // The two forms ask for different things, so carrying a ticker across into
+    // the currency select — or a currency back into the symbol box — would
+    // leave a field holding something it cannot mean.
+    form.symbol = 'USD'
+    form.name = ''
+    form.purchasePrice = null
+    return
+  }
+  if (form.symbol && CURRENCIES.some(c => c.code === form.symbol)) form.symbol = ''
   if (String(form.symbol ?? '').trim()) lookupSymbol()
 })
 

@@ -25,6 +25,7 @@
 </template>
 
 <script setup lang="ts">
+import { CURRENCIES } from '~/utils/assetUnits'
 /**
  * The official logo for a holding, with a graceful fall back to initials.
  *
@@ -65,11 +66,21 @@ const glyphSize = computed(() => `${Math.round(props.size * 0.62)}px`)
 
 /** No logo provider carries metals, so they get a glyph instead of initials. */
 const GLYPH: Record<string, string> = { GOLD: '🥇', SILVER: '🥈', COPPER: '🥉' }
-const glyph = computed(() =>
-  props.type === 'commodity' ? GLYPH[props.symbol?.toUpperCase()] ?? null : null)
+
+const glyph = computed(() => {
+  if (props.type === 'commodity') return GLYPH[props.symbol?.toUpperCase()] ?? null
+  // Cash wears its own currency sign. "₹" says rupees faster than "IN" does,
+  // and the sign is the one mark every holder of that currency recognises.
+  if (props.type === 'cash') {
+    return CURRENCIES.find(c => c.code === props.symbol?.toUpperCase())?.symbol ?? '¤'
+  }
+  return null
+})
 
 const src = computed(() => {
-  if (props.type === 'commodity') return null
+  // Neither metals nor money have a logo to fetch, and asking for one is a
+  // guaranteed 404 on every render.
+  if (props.type === 'commodity' || props.type === 'cash') return null
   if (props.type === 'crypto') return props.image || null
   const t = props.symbol?.toUpperCase()
   if (!t) return null

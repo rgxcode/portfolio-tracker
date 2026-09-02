@@ -49,7 +49,9 @@
                 <span class="text-n-500 text-xs truncate">{{ row.asset.name }}</span>
               </div>
             </td>
-            <td class="n-td text-right text-n-300">{{ row.units }}</td>
+            <td class="n-td text-right text-n-300">
+              {{ row.units }}<span v-if="row.unit" class="text-n-600 ml-1">{{ row.unit }}</span>
+            </td>
             <td class="n-td text-right text-n-400">{{ row.avgCost }}</td>
             <td class="n-td text-right">{{ row.last }}</td>
             <td class="n-td text-right" :class="row.change === null ? 'text-n-600' : row.change >= 0 ? 'text-up' : 'text-down'">
@@ -84,6 +86,7 @@
  * which showed overlapping columns of the same numbers in two places.
  */
 import { useHistoricalPrices } from '~/composables/useHistoricalPrices'
+import { unitLabel } from '~/utils/assetUnits'
 
 const d = inject<any>('dash')
 
@@ -105,6 +108,9 @@ const rows = computed(() => {
     return {
       asset,
       units: asset.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 }),
+      // "5.5 oz" rather than "5.5": in a column that also counts shares and
+      // coins, the number alone does not say what was counted.
+      unit: unitLabel(asset),
       avgCost: d.formatCurrency(d.convert(asset.purchasePrice)),
       last: d.unitPrice(asset),
       change: Number.isFinite(asset.change24h) ? asset.change24h : null,
