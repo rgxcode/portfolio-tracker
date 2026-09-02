@@ -189,7 +189,14 @@ async function analyse(symbol, name, type) {
 /** Symbols any user actually holds — nothing else is worth spending a run on. */
 async function heldSymbols() {
   const rows = await mongoose.connection.collection('assets')
-    .aggregate([{ $group: { _id: { symbol: '$symbol', type: '$type' } } }])
+    // Cash is excluded: there is no published commentary on a bank balance.
+    // Asking anyway spent a news request per currency and then filed the
+    // currency under "no coverage found", which reads as a gap in the data
+    // rather than a category that was never going to have any.
+    .aggregate([
+      { $match: { type: { $ne: 'cash' } } },
+      { $group: { _id: { symbol: '$symbol', type: '$type' } } },
+    ])
     .toArray()
   return rows.map(r => ({
     symbol: String(r._id.symbol).toUpperCase(),

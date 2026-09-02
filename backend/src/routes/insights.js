@@ -19,7 +19,13 @@ router.use((_req, res, next) => {
  */
 router.get('/', async (req, res, next) => {
   try {
-    const assets = await Asset.find({ userId: req.userId }, { symbol: 1, type: 1 }).lean()
+    // Cash is left out of the count as well as the analysis. Including it made
+    // the header read "8 of 12" when only 11 holdings could ever have coverage,
+    // and listed currencies as awaiting an article that is never coming.
+    const assets = await Asset.find(
+      { userId: req.userId, type: { $ne: 'cash' } },
+      { symbol: 1, type: 1 },
+    ).lean()
     const symbols = [...new Set(assets.map(a => String(a.symbol).toUpperCase()))]
     if (symbols.length === 0) return res.json({ insights: [], summary: null })
 
