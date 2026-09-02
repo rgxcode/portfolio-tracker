@@ -151,6 +151,76 @@
           </div>
         </dl>
       </section>
+
+      <!-- Who has an account -->
+      <section class="bg-gray-800/60 border border-gray-700 rounded-xl p-4">
+        <div class="flex items-baseline gap-3 flex-wrap mb-3">
+          <h2 class="font-semibold text-white">Users</h2>
+          <span v-if="users" class="text-xs text-gray-500">
+            {{ users.total }} account{{ users.total === 1 ? '' : 's' }}
+            <span v-if="users.users.length < users.total">
+              · showing the {{ users.users.length }} most recent
+            </span>
+          </span>
+          <button
+            class="ml-auto text-xs text-gray-400 hover:text-white transition-colors"
+            :disabled="usersLoading"
+            @click="loadUsers"
+          >
+            {{ usersLoading ? 'Loading…' : 'Refresh' }}
+          </button>
+        </div>
+
+        <p v-if="usersError" class="text-red-400 text-sm">{{ usersError }}</p>
+        <p v-else-if="usersLoading && !users" class="text-gray-500 text-sm">Loading…</p>
+
+        <div v-else-if="users" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
+                <th class="text-left font-semibold py-2 pr-3">Account</th>
+                <th class="text-left font-semibold py-2 px-3">Sign-in</th>
+                <th class="text-right font-semibold py-2 px-3">Holdings</th>
+                <th class="text-right font-semibold py-2 px-3">Value</th>
+                <th class="text-right font-semibold py-2 pl-3">Joined</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="u in users.users"
+                :key="u.id"
+                class="border-b border-gray-700/50 last:border-0 hover:bg-gray-700/20"
+              >
+                <td class="py-2 pr-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-white">{{ u.name || '—' }}</span>
+                    <span v-if="u.isAdmin" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-300">admin</span>
+                    <span v-if="!u.emailVerified" class="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400" title="No provider has vouched for this address">unverified</span>
+                  </div>
+                  <div class="text-xs text-gray-500 break-all">{{ u.email }}</div>
+                </td>
+                <td class="py-2 px-3 text-gray-300 text-xs">
+                  <!-- How they get in, not what they get in with. -->
+                  <span v-for="m in signInMethods(u)" :key="m" class="inline-block mr-1.5">{{ m }}</span>
+                </td>
+                <td class="py-2 px-3 text-right text-gray-300">
+                  {{ u.assets }}
+                  <span v-if="u.types.length" class="block text-[10px] text-gray-600">{{ u.types.join(', ') }}</span>
+                </td>
+                <td class="py-2 px-3 text-right text-white">
+                  ${{ u.portfolioValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+                </td>
+                <td class="py-2 pl-3 text-right text-gray-400 text-xs whitespace-nowrap">{{ day(u.createdAt) }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p class="text-[11px] text-gray-600 mt-3">
+            Passwords and linked-provider identifiers are deliberately not sent to this page —
+            neither is any use to an operator, and both are credentials.
+          </p>
+        </div>
+      </section>
     </template>
   </div>
 </template>
@@ -166,6 +236,33 @@ const { apiFetch } = useApi()
 const data = ref<any>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+
+// ── Users ───────────────────────────────────────────────────────────
+const users = ref<any>(null)
+const usersLoading = ref(false)
+const usersError = ref<string | null>(null)
+
+async function loadUsers() {
+  usersLoading.value = true
+  usersError.value = null
+  try {
+    users.value = await apiFetch('/api/admin/users')
+  } catch (err: any) {
+    usersError.value = err?.data?.error || err?.message || 'Could not load users'
+  } finally {
+    usersLoading.value = false
+  }
+}
+
+/** "Google", "Password" — how the account signs in, in the order it can. */
+function signInMethods(u: any): string[] {
+  const out = (u.providers ?? []).map((p: string) => p.charAt(0).toUpperCase() + p.slice(1))
+  if (u.hasPassword) out.push('Password')
+  return out.length ? out : ['—']
+}
+
+const day = (d: string | null) =>
+  d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
 async function load() {
   loading.value = true
@@ -277,5 +374,8 @@ const refresherRows = computed(() => {
   ]
 })
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadUsers()
+})
 </script>

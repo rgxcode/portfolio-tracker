@@ -9,7 +9,7 @@ import { loadSnapshot, STANDARD, LLM } from '../jobs/snapshotStore.js'
 import { usage as rateUsage } from '../jobs/rateBudget.js'
 import { stockWindowStatus, isStockWindowOpen, formatCET } from '../jobs/marketHours.js'
 import { refresherStatus } from '../agents/llmRefresher.js'
-import { adminEmails } from '../admins.js'
+import { adminEmails, isAdminEmail } from '../admins.js'
 
 const router = Router()
 
@@ -190,6 +190,90 @@ router.get('/overview', async (_req, res, next) => {
         rssMB: +(process.memoryUsage().rss / MB).toFixed(1),
         heapUsedMB: +(process.memoryUsage().heapUsed / MB).toFixed(1),
       },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/users — who has an account, and what they hold.
+ *
+ * Selected field by field rather than fetched whole and trimmed afterwards.
+ * Two things must never leave the database here: `passwordHash`, which is a
+ * credential an operator has no use for and every reason not to handle, and
+ * each provider's subject identifier, which is the key to someone's Google
+ * account rather than a fact about their use of this app. Naming the fields
+ * wanted means a column added to the user schema later cannot quietly start
+ * appearing in this response.
+ *
+ * Holdings are counted per user in one aggregate rather than a query each, so
+ * the cost does not grow with the number of accounts.
+ */
+router.get('/users', async (req, res, next) => {
+  try {
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200))
+
+    const users = await User.find(
+      {},
+      {
+        email: 1,
+        name: 1,
+        firstName: 1,
+        lastName: 1,
+        emailVerified: 1,
+        avatarUrl: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        // The names of linked providers are useful — "how does this person sign
+        // in" — while the ids behind them are not, so only the names are read.
+        'providers.provider': 1,
+        'providers.linkedAt': 1,
+        // Selected only to answer "can this account use a password at all". The
+        // value is turned into a boolean below and never serialised.
+        passwordHash: 1,
+      },
+    )
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean()
+
+    const holdings = await Asset.aggregate([
+      {
+        $group: {
+          _id: '$userId',
+          assets: { $sum: 1 },
+          // Best-effort: `currentPrice` is whatever the last refresh wrote, so
+          // this is the same figure the person sees on their own dashboard.
+          value: { $sum: { $multiply: ['$currentPrice', '$quantity'] } },
+          types: { $addToSet: '$type' },
+        },
+      },
+    ])
+    const byUser = new Map(holdings.map(h => [String(h._id), h]))
+
+    res.json({
+      total: await User.countDocuments(),
+      limit,
+      users: users.map((u) => {
+        const h = byUser.get(String(u._id))
+        return {
+          id: String(u._id),
+          email: u.email,
+          name: u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || null,
+          emailVerified: Boolean(u.emailVerified),
+          avatarUrl: u.avatarUrl ?? null,
+          isAdmin: isAdminEmail(u.email),
+          // A boolean, never the hash itself.
+          hasPassword: Boolean(u.passwordHash),
+          providers: (u.providers ?? []).map(p => p.provider),
+          createdAt: u.createdAt ?? null,
+          updatedAt: u.updatedAt ?? null,
+          assets: h?.assets ?? 0,
+          portfolioValue: h ? +h.value.toFixed(2) : 0,
+          types: (h?.types ?? []).sort(),
+        }
+      }),
     })
   } catch (err) {
     next(err)
