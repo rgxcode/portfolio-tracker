@@ -17,6 +17,15 @@ const assetSchema = new mongoose.Schema(
     purchasePrice: { type: Number, required: true, min: 0 },
     currentPrice: { type: Number, default: 0 },
     change24h: { type: Number, default: 0 },
+    /**
+     * When a real quote was last written to this row.
+     *
+     * Null means never: the holding was created before any price could be
+     * fetched and is carrying its purchase price as a stand-in. That has to be
+     * distinguishable, because a stand-in and a genuinely unmoved price look
+     * identical in every other field.
+     */
+    lastUpdated: { type: Date, default: null },
 
     /**
      * Cash only: which currency the balance is held in (ISO 4217).

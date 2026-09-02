@@ -113,7 +113,10 @@ const rows = computed(() => {
       unit: unitLabel(asset),
       avgCost: d.formatCurrency(d.convert(asset.purchasePrice)),
       last: d.unitPrice(asset),
-      change: Number.isFinite(asset.change24h) ? asset.change24h : null,
+      // A holding that has never been priced is carrying its purchase price as
+      // a stand-in. Printing "+0.00%" beside it would assert the one thing not
+      // known — that it has not moved — so the column stays empty instead.
+      change: asset.lastUpdated && Number.isFinite(asset.change24h) ? asset.change24h : null,
       weight: (value / total) * 100,
       barWidth: (value / largest) * 100,
       value: d.formatCurrency(d.convert(value)),
