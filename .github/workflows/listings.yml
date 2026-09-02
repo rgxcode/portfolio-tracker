@@ -1,0 +1,56 @@
+name: Refresh the listing universe
+
+# Reloads every US-listed security — companies from the SEC's ticker file,
+# funds from Nasdaq's traded-symbol file — so search knows what exists.
+#
+# Its own workflow because it had been a step inside the S&P 500 backfill, which
+# also refetches years of price history for every index member and is run by
+# hand. Picking up a newly listed ETF should not mean running that, and it
+# should not wait for someone to remember either.
+#
+# Weekly is ample: the universe gains and loses a handful of symbols a week, and
+# both sources are free and unmetered, so this spends none of the price budget.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Sunday 04:00 UTC — outside market hours, nothing else scheduled near it.
+    - cron: '0 4 * * 0'
+
+concurrency:
+  group: listings
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci --omit=dev
+
+      - name: Refresh the US listing universe
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          # The SEC asks that automated requests identify themselves.
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: |
+          node -e "
+            import('./src/jobs/listings.js').then(async (m) => {
+              const mongoose = (await import('mongoose')).default
+              await mongoose.connect(process.env.MONGODB_URI)
+              await m.refreshListings()
+              await mongoose.disconnect()
+            }).catch((err) => { console.error(err); process.exit(1) })
+          "

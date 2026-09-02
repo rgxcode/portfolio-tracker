@@ -100,7 +100,7 @@
           <span class="text-gray-500 font-normal">
             {{ form.type === 'crypto' ? '(e.g. BTC, ETH, SOL)'
               : form.type === 'commodity' ? '(GOLD, SILVER, COPPER)'
-              : '(e.g. AAPL, TSLA, MSFT)' }}
+              : '(e.g. AAPL, TSLA — or a fund: SOXX, SMH, VOO)' }}
           </span>
         </label>
         <div class="relative">
@@ -129,12 +129,15 @@
             >
               <span class="font-semibold text-white text-sm w-14 shrink-0">{{ s.symbol }}</span>
               <span class="text-gray-300 text-sm truncate">{{ s.name }}</span>
+              <!-- A fund and a share are added identically, so the label is
+                   the only thing distinguishing SOXX from NVDA in this list. -->
               <span
                 class="text-[10px] ml-auto shrink-0 px-1.5 py-0.5 rounded"
-                :class="s.type === 'crypto' ? 'bg-blue-900/60 text-blue-300'
+                :class="s.isEtf ? 'bg-emerald-900/60 text-emerald-300'
+                  : s.type === 'crypto' ? 'bg-blue-900/60 text-blue-300'
                   : s.type === 'commodity' ? 'bg-amber-900/60 text-amber-300'
                   : 'bg-purple-900/60 text-purple-300'"
-              >{{ s.type }}</span>
+              >{{ s.isEtf ? 'ETF' : s.type }}</span>
             </li>
           </ul>
         </div>
@@ -288,7 +291,7 @@ async function handleSubmit() {
  * price jobs actually know about.
  */
 const { apiFetch } = useApi()
-const suggestions = ref<Array<{ symbol: string, name: string, type: string }>>([])
+const suggestions = ref<Array<{ symbol: string, name: string, type: string, isEtf?: boolean }>>([])
 let lookupTimer: ReturnType<typeof setTimeout> | null = null
 
 function onSymbolInput() {

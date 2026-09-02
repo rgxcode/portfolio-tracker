@@ -174,13 +174,26 @@ router.get('/search', async (req, res, next) => {
       wantCrypto ? Coin.find({ _id: q.toUpperCase() }, { name: 1, rank: 1, image: 1 }).lean() : none,
       wantCrypto ? Coin.find({ _id: starts }, { name: 1, rank: 1, image: 1 }).limit(10).lean() : none,
       wantCrypto ? Coin.find({ name: contains }, { name: 1, rank: 1, image: 1 }).limit(10).lean() : none,
-      wantStocks ? Listing.find({ _id: q.toUpperCase() }, { name: 1 }).lean() : none,
-      wantStocks ? Listing.find({ _id: starts }, { name: 1, inIndex: 1 }).limit(12).lean() : none,
-      wantStocks ? Listing.find({ name: contains }, { name: 1, inIndex: 1 }).limit(12).lean() : none,
+      wantStocks ? Listing.find({ _id: q.toUpperCase() }, { name: 1, isEtf: 1 }).lean() : none,
+      wantStocks ? Listing.find({ _id: starts }, { name: 1, inIndex: 1, isEtf: 1 }).limit(12).lean() : none,
+      wantStocks ? Listing.find({ name: contains }, { name: 1, inIndex: 1, isEtf: 1 }).limit(12).lean() : none,
     ])
 
     const shapeStock = d => ({ symbol: d._id, name: d.name, sector: d.sector, type: 'stock' })
-    const shapeListed = d => ({ symbol: d._id, name: d.name, sector: null, type: 'stock' })
+    /**
+     * A fund is added and priced exactly like a share — same Yahoo quote, same
+     * maths — so it keeps `type: 'stock'` rather than becoming a fourth kind of
+     * asset. `isEtf` is carried alongside purely so the form can label it: a
+     * list where SOXX and NVDA look identical hides the difference that
+     * matters when choosing between them.
+     */
+    const shapeListed = d => ({
+      symbol: d._id,
+      name: d.name,
+      sector: d.isEtf ? 'ETF' : null,
+      type: 'stock',
+      isEtf: Boolean(d.isEtf),
+    })
     const shapeCoin = d => ({ symbol: d._id, name: d.name, sector: 'Crypto', type: 'crypto', image: d.image ?? null })
 
     // Exact ticker matches first, then prefixes, then names — the order someone
