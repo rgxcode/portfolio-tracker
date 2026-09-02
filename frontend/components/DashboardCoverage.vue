@@ -11,10 +11,10 @@
 
     <div v-else class="flex flex-col gap-3">
       <article
-        v-for="(item, i) in items"
+        v-for="(item, i) in visible"
         :key="item.symbol"
         class="flex flex-col gap-[5px]"
-        :class="i < items.length - 1 ? 'pb-3 border-b border-[rgba(233,233,237,.07)]' : ''"
+        :class="i < visible.length - 1 ? 'pb-3 border-b border-[rgba(233,233,237,.07)]' : ''"
       >
         <header class="flex items-center gap-[7px]">
           <!-- The ticker still goes to the holding; the story goes to the story. -->
@@ -93,9 +93,38 @@
       </article>
     </div>
 
+    <button
+      v-if="hidden > 0"
+      class="w-full mt-3 pt-3 border-t border-[rgba(233,233,237,.07)] text-[11.5px] text-n-500 hover:text-n-text transition-colors inline-flex items-center justify-center gap-1"
+      :aria-expanded="showAll"
+      @click="showAll = !showAll"
+    >
+      {{ showAll ? 'Show fewer' : `Show ${hidden} more` }}
+      <svg
+        class="w-3 h-3 transition-transform"
+        :class="showAll ? 'rotate-180' : ''"
+        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
+      </svg>
+    </button>
+
+    <!--
+      Which holdings have nothing yet. "8 of 12" on its own invites the
+      question; naming the four answers it, and distinguishes "no coverage
+      found" from "the job has not looked".
+    -->
+    <p
+      v-if="summary?.awaiting?.length"
+      class="mt-3 pt-3 border-t border-[rgba(233,233,237,.07)] text-[11px] leading-normal text-n-600"
+    >
+      Nothing published yet for
+      <span class="text-n-400">{{ summary.awaiting.join(', ') }}</span>.
+    </p>
+
     <p class="mt-3 pt-3 border-t border-[rgba(233,233,237,.07)] text-[11px] leading-normal text-n-600">
-      Written by a language model from recent published articles. Open a holding to read the sources.
-      Not advice.
+      Written by a language model from recent published articles, refreshed hourly through the day.
+      Open a holding to read the sources. Not advice.
     </p>
   </div>
 </template>
@@ -151,10 +180,21 @@ const { apiFetch } = useApi()
 
 const loading = ref(true)
 const insights = ref<Insight[]>([])
-const summary = ref<{ covered: number, holdings: number } | null>(null)
+const summary = ref<{ covered: number, holdings: number, awaiting?: string[] } | null>(null)
+
+/**
+ * How many to show before the list is cut off.
+ *
+ * The rail used to show three and say nothing about the rest, so a portfolio
+ * with coverage on eight holdings looked like coverage on three. All of it is
+ * reachable now; only the first few are on screen unasked, because a rail that
+ * runs for a page and a half stops being a summary.
+ */
+const PREVIEW = 4
+const showAll = ref(false)
 
 const items = computed(() =>
-  insights.value.slice(0, 3).map((i) => {
+  insights.value.map((i) => {
     const sources = (i.sources ?? [])
       .filter(s => s.url)
       .map(s => ({
@@ -188,6 +228,9 @@ const items = computed(() =>
   }),
 )
 
+const visible = computed(() => (showAll.value ? items.value : items.value.slice(0, PREVIEW)))
+const hidden = computed(() => Math.max(0, items.value.length - PREVIEW))
+
 function toneLabel(sentiment: string): string {
   return sentiment === 'positive' ? 'Upbeat'
     : sentiment === 'negative' ? 'Cautious'
@@ -217,7 +260,10 @@ function sourceLine(sources: Array<{ publisher: string }>): string {
 
 onMounted(async () => {
   try {
-    const res = await apiFetch<{ insights: Insight[], summary?: { covered: number, holdings: number } }>('/api/insights')
+    const res = await apiFetch<{
+      insights: Insight[]
+      summary?: { covered: number, holdings: number, awaiting?: string[] }
+    }>('/api/insights')
     insights.value = res.insights ?? []
     summary.value = res.summary ?? null
   } catch {

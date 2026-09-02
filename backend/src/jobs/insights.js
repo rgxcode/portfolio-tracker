@@ -54,8 +54,25 @@ const MODELS = [
   'opencode/ling-3.0-flash-free',
 ]
 
-/** Skip anything refreshed more recently than this. News does not move hourly. */
+/**
+ * Skip anything refreshed more recently than this.
+ *
+ * The workflow sets it to 1 so an hourly schedule actually rewrites; the
+ * default here stays conservative for a hand-run job, where re-analysing the
+ * whole book because you ran the command twice is a waste.
+ */
 const FRESH_HOURS = Number(process.env.INSIGHTS_FRESH_HOURS ?? 12)
+
+/**
+ * Most holdings to analyse in one run.
+ *
+ * A ceiling on how long a run can take, so a portfolio that grows cannot
+ * quietly turn a three-minute job into one that hits the workflow timeout and
+ * writes nothing. Combined with the stalest-first ordering below, a book too
+ * large for one pass still refreshes completely — just over several runs,
+ * oldest first, instead of failing at the end of one.
+ */
+const MAX_PER_RUN = Number(process.env.INSIGHTS_MAX_PER_RUN ?? 25)
 const TIMEOUT_MS = 180_000
 
 const log = (...a) => console.log(`[${formatCET()}] insights:`, ...a)
@@ -199,16 +216,31 @@ async function main() {
   )
 
   const cutoff = Date.now() - FRESH_HOURS * 3600e3
+
+  // Read what is stored before deciding the order, so the run can start with
+  // whatever has gone longest without a look. Never-analysed holdings sort
+  // first: no coverage at all is a worse state than coverage from this morning.
+  const stored = new Map(
+    (await Insight.find({ _id: { $in: targets.map(t => t.symbol) } }, { generatedAt: 1 }).lean())
+      .map(i => [i._id, new Date(i.generatedAt).getTime()]),
+  )
+
+  const due = targets
+    .filter(t => (stored.get(t.symbol) ?? 0) <= cutoff)
+    .sort((a, b) => (stored.get(a.symbol) ?? 0) - (stored.get(b.symbol) ?? 0))
+
+  const skipped = targets.length - due.length
+  if (skipped) log(`  ${skipped} still fresh, skipping`)
+
+  const batch = due.slice(0, MAX_PER_RUN)
+  if (due.length > batch.length) {
+    log(`  ${due.length} due, taking the ${batch.length} stalest this run`)
+  }
+
   let done = 0
   const failures = []
 
-  for (const { symbol, type } of targets) {
-    const existing = await Insight.findById(symbol).lean()
-    if (existing && new Date(existing.generatedAt).getTime() > cutoff) {
-      log(`  ${symbol}: still fresh, skipping`)
-      continue
-    }
-
+  for (const { symbol, type } of batch) {
     try {
       const result = await analyse(symbol, names.get(symbol) ?? symbol, type)
       await Insight.findByIdAndUpdate(

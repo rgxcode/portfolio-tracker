@@ -6,13 +6,22 @@ name: Portfolio insights
 # citations are resolved by index into the list we supplied, so a fabricated
 # link cannot reach the page.
 #
-# Twice a day is plenty — published commentary does not turn over hourly, and
-# the job skips anything refreshed within INSIGHTS_FRESH_HOURS anyway.
+# Hourly through the day, once overnight. Times are UTC: 05:00-20:00 here is
+# roughly 07:00-22:00 in CEST, so the refresh follows the hours someone is
+# actually reading the dashboard, and the small hours get one pass rather than
+# sixteen.
+#
+# The job skips anything refreshed within INSIGHTS_FRESH_HOURS, so that value
+# and this schedule have to agree: leaving the freshness window at twelve hours
+# while running hourly would mean fifteen runs a day that do nothing at all.
+#
+# Affordable because the repo is public — Actions minutes are free — and the
+# analysis runs on free models. Real runs take two to three minutes.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 6,18 * * *'
+    - cron: '0 1,5-20 * * *'
 
 concurrency:
   group: insights
@@ -40,4 +49,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          # Set here rather than left to the job's default so the freshness
+          # window and the cron above are visible in the same file.
+          INSIGHTS_FRESH_HOURS: '1'
         run: node src/jobs/insights.js
