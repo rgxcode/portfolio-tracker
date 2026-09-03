@@ -30,8 +30,30 @@ export interface Asset {
   instrumentType?: string | null
 }
 
+/**
+ * One recorded trade. Holdings say what is owned; these say how it got that
+ * way, so a sale is a thing that happened rather than a quantity that silently
+ * shrank.
+ */
+export interface Transaction {
+  id: string
+  _id?: string
+  symbol: string
+  name: string
+  type: 'crypto' | 'stock' | 'commodity' | 'cash'
+  side: 'buy' | 'sell'
+  quantity: number
+  /** What one unit changed hands at, in USD. */
+  unitPrice: number
+  date: string
+  currency?: string | null
+  /** Sells only: proceeds less the average cost at the moment of sale. */
+  realizedPnl?: number | null
+}
+
 export interface PortfolioState {
   assets: Asset[]
+  transactions: Transaction[]
   isLoading: boolean
   lastRefreshed: string | null
   error: string | null
@@ -47,6 +69,7 @@ function normalizeAsset(raw: any): Asset {
 export const usePortfolioStore = defineStore('portfolio', {
   state: (): PortfolioState => ({
     assets: [],
+    transactions: [],
     isLoading: false,
     lastRefreshed: null,
     error: null,
@@ -166,6 +189,60 @@ export const usePortfolioStore = defineStore('portfolio', {
         if (idx !== -1) this.assets[idx] = { ...this.assets[idx], ...saved }
       } catch (err: any) {
         this.error = err?.data?.error || err?.message || 'Failed to update asset'
+        throw err
+      }
+    },
+
+    async fetchTransactions(symbol?: string) {
+      const { apiFetch } = useApi()
+      try {
+        const rows = await apiFetch<any[]>(
+          `/api/transactions${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`,
+        )
+        this.transactions = rows.map(r => ({ ...r, id: r._id || r.id }))
+      } catch {
+        // The ledger is supporting detail; failing to load it must not take
+        // the holdings down with it.
+      }
+    },
+
+    /**
+     * Record a trade and apply what it did to the position.
+     *
+     * The reply carries the holding as it now stands, so the client never
+     * recomputes the arithmetic the server just did — the two cannot drift.
+     * A sale that emptied the position returns no asset at all, which is the
+     * signal to drop the row rather than leave one showing zero.
+     */
+    async addTransaction(tx: {
+      symbol: string
+      name?: string
+      type: Asset['type']
+      side: 'buy' | 'sell'
+      quantity: number
+      unitPrice: number
+      date: string
+      currency?: string | null
+    }) {
+      const { apiFetch } = useApi()
+      try {
+        const res = await apiFetch<any>('/api/transactions', { method: 'POST', body: tx })
+
+        if (res.closed) {
+          this.assets = this.assets.filter(a => a.symbol.toUpperCase() !== tx.symbol.toUpperCase())
+        } else if (res.asset) {
+          const saved = normalizeAsset(res.asset)
+          const idx = this.assets.findIndex(a => a.id === saved.id)
+          if (idx === -1) this.assets.unshift(saved)
+          else this.assets[idx] = { ...this.assets[idx], ...saved }
+        }
+
+        if (res.transaction) {
+          this.transactions.unshift({ ...res.transaction, id: res.transaction._id })
+        }
+        return res
+      } catch (err: any) {
+        this.error = err?.data?.error || err?.message || 'Failed to record the transaction'
         throw err
       }
     },

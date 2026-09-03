@@ -22,17 +22,28 @@
     </div>
 
     <div class="overflow-x-auto">
-      <table class="w-full text-[13px] border-collapse">
+      <table class="w-full text-[12.5px] md:text-[13px] border-collapse">
         <thead>
+          <!--
+            Eight columns is four more than a phone can show, and the four it
+            cut were Weight, Value and the sparkline — everything the table is
+            actually read for. Value sat off-screen to the right, so the answer
+            to "what is this worth" required scrolling sideways past the cost
+            basis to reach it.
+
+            Below md the row keeps what cannot be inferred at a glance — what it
+            is, how it moved, what it is worth — and the rest folds into a
+            second line under the ticker. Nothing is dropped, only re-laid out.
+          -->
           <tr class="rule">
-            <th class="text-left n-th w-[190px]">Asset</th>
-            <th class="text-right n-th">Units</th>
-            <th class="text-right n-th">Avg cost</th>
-            <th class="text-right n-th">Last</th>
+            <th class="text-left n-th md:w-[190px]">Asset</th>
+            <th class="text-right n-th hidden md:table-cell">Units</th>
+            <th class="text-right n-th hidden md:table-cell">Avg cost</th>
+            <th class="text-right n-th hidden md:table-cell">Last</th>
             <th class="text-right n-th">24h</th>
-            <th class="text-left n-th w-28">Weight</th>
+            <th class="text-left n-th w-28 hidden md:table-cell">Weight</th>
             <th class="text-right n-th">Value</th>
-            <th class="text-right n-th w-24">30 days</th>
+            <th class="text-right n-th w-24 hidden md:table-cell">30 days</th>
           </tr>
         </thead>
         <tbody v-for="group in groups" :key="group.label">
@@ -57,29 +68,40 @@
             class="rule hover:bg-[rgba(233,233,237,.04)] transition-colors cursor-pointer"
             @click="d.openTicker(row.asset.symbol.toUpperCase())"
           >
-            <td class="n-td">
+            <td class="n-td max-w-0 md:max-w-none">
               <div class="flex items-center gap-[9px]">
                 <AssetLogo :symbol="row.asset.symbol" :type="row.asset.type" :image="row.asset.image" :size="24" />
                 <span class="font-medium">{{ row.asset.symbol.toUpperCase() }}</span>
-                <span class="text-n-500 text-xs truncate">{{ row.asset.name }}</span>
+                <span class="text-n-500 text-xs truncate min-w-0">{{ row.asset.name }}</span>
+              </div>
+              <!--
+                The columns the phone has no room for, folded under the ticker
+                rather than pushed off the side of the screen.
+              -->
+              <div class="md:hidden text-[10.5px] text-n-600 mt-1 pl-[33px] flex items-center gap-1.5">
+                <span class="text-n-400">{{ row.units }}<span v-if="row.unit" class="ml-0.5">{{ row.unit }}</span></span>
+                <span>·</span>
+                <span>{{ row.last }}</span>
+                <span>·</span>
+                <span>{{ row.weight.toFixed(1) }}%</span>
               </div>
             </td>
-            <td class="n-td text-right text-n-300">
+            <td class="n-td text-right text-n-300 hidden md:table-cell">
               {{ row.units }}<span v-if="row.unit" class="text-n-600 ml-1">{{ row.unit }}</span>
             </td>
-            <td class="n-td text-right text-n-400">{{ row.avgCost }}</td>
-            <td class="n-td text-right">{{ row.last }}</td>
-            <td class="n-td text-right" :class="row.change === null ? 'text-n-600' : row.change >= 0 ? 'text-up' : 'text-down'">
+            <td class="n-td text-right text-n-400 hidden md:table-cell">{{ row.avgCost }}</td>
+            <td class="n-td text-right hidden md:table-cell">{{ row.last }}</td>
+            <td class="n-td text-right align-top md:align-middle" :class="row.change === null ? 'text-n-600' : row.change >= 0 ? 'text-up' : 'text-down'">
               {{ row.change === null ? '—' : `${row.change >= 0 ? '+' : '−'}${Math.abs(row.change).toFixed(2)}%` }}
             </td>
-            <td class="n-td">
+            <td class="n-td hidden md:table-cell">
               <div class="h-1 rounded-[3px] bg-[rgba(233,233,237,.08)]">
                 <div class="h-1 rounded-[3px] bg-n-accent" :style="{ width: `${row.barWidth}%` }" />
               </div>
               <div class="text-[10px] text-n-600 mt-[3px]">{{ row.weight.toFixed(1) }}%</div>
             </td>
-            <td class="n-td text-right font-medium">{{ row.value }}</td>
-            <td class="n-td text-right">
+            <td class="n-td text-right font-medium align-top md:align-middle">{{ row.value }}</td>
+            <td class="n-td text-right hidden md:table-cell">
               <Sparkline
                 :values="history[row.asset.symbol.toLowerCase()] ?? []"
                 :label="`${row.asset.symbol.toUpperCase()} over 30 days`"

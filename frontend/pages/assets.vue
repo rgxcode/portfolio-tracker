@@ -39,6 +39,48 @@
 
       <!-- Current Assets -->
       <div>
+        <!--
+          The ledger, newest first. It starts at the first transaction
+          recorded, not at the beginning of the portfolio: the holdings here
+          predate it, and inventing dates and prices for them would be a
+          history rather than a record.
+        -->
+        <section v-if="store.transactions.length" class="mb-6">
+          <h2 class="text-base font-semibold text-white mb-3">
+            Transactions
+            <span class="text-gray-500 font-normal text-sm ml-1">({{ store.transactions.length }})</span>
+          </h2>
+          <ul class="bg-gray-800 border border-gray-700 rounded-xl divide-y divide-gray-700 overflow-hidden">
+            <li
+              v-for="t in store.transactions.slice(0, 12)"
+              :key="t.id"
+              class="flex items-center gap-3 px-4 py-2.5 text-sm"
+            >
+              <span
+                class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 w-11 text-center"
+                :class="t.side === 'sell'
+                  ? 'bg-rose-900/60 text-rose-300'
+                  : 'bg-emerald-900/60 text-emerald-300'"
+              >{{ t.side }}</span>
+              <span class="font-medium text-white w-16 shrink-0">{{ t.symbol }}</span>
+              <span class="text-gray-400 tabular-nums">
+                {{ t.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 }) }}
+                <span class="text-gray-600">@</span>
+                ${{ t.unitPrice.toLocaleString('en-US', { maximumFractionDigits: 6 }) }}
+              </span>
+              <!-- Only a sale has a result; a purchase has not resolved yet. -->
+              <span
+                v-if="t.side === 'sell' && t.realizedPnl !== null && t.realizedPnl !== undefined"
+                class="text-xs tabular-nums"
+                :class="t.realizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'"
+              >
+                {{ t.realizedPnl >= 0 ? '+' : '−' }}${{ Math.abs(t.realizedPnl).toLocaleString('en-US', { maximumFractionDigits: 2 }) }}
+              </span>
+              <span class="ml-auto text-xs text-gray-500 shrink-0">{{ shortDate(t.date) }}</span>
+            </li>
+          </ul>
+        </section>
+
         <h2 class="text-base font-semibold text-white mb-4">
           Current Assets
           <span class="text-gray-500 font-normal text-sm ml-1">({{ store.assets.length }})</span>
@@ -98,9 +140,21 @@ onMounted(() => {
 })
 
 function onAssetAdded() {
-  // The store already holds the result — adding folds into an existing holding
-  // rather than appending, and it merged the reply over that row itself.
+  // The store already holds the result — a buy folds into an existing holding
+  // rather than appending, a sale that emptied one removed the row, and the
+  // new transaction was put at the top of the ledger. All from the reply.
 }
+
+/** "3 Sep 2026" — enough to place a trade without spelling out the year twice. */
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  })
+}
+
+onMounted(() => {
+  store.fetchTransactions()
+})
 
 useHead({ title: 'Manage Assets – Portfolio Tracker' })
 </script>

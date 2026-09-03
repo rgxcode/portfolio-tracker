@@ -1,8 +1,31 @@
 <template>
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
-    <h2 class="text-lg font-semibold text-white mb-4">Add New Asset</h2>
+    <h2 class="text-lg font-semibold text-white mb-4">Record a transaction</h2>
 
     <form class="space-y-4" @submit.prevent="handleSubmit">
+      <!--
+        A holding is the sum of what was bought and sold, so both are entered
+        the same way. Selling used to have no expression at all: the only way
+        to record one was to edit the quantity down by hand, which left no
+        trace that anything had been sold, on what date, or at what price.
+      -->
+      <div class="flex gap-3">
+        <button
+          v-for="s in SIDES"
+          :key="s.id"
+          type="button"
+          class="flex-1 py-2 rounded-lg text-sm font-medium border transition-colors"
+          :class="form.side === s.id
+            ? (s.id === 'buy'
+              ? 'bg-emerald-600 border-emerald-500 text-white'
+              : 'bg-rose-600 border-rose-500 text-white')
+            : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'"
+          :aria-pressed="form.side === s.id"
+          @click="form.side = s.id"
+        >
+          {{ s.label }}
+        </button>
+      </div>
       <!-- Asset Type -->
       <div>
         <label class="block text-sm font-medium text-gray-300 mb-1">Asset Type</label>
@@ -176,7 +199,7 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-300 mb-1">
-            Purchase price ({{ priceCurrency }})
+            {{ form.side === 'sell' ? 'Sale' : 'Purchase' }} price ({{ priceCurrency }})
           </label>
           <input
             v-model.number="form.purchasePrice"
@@ -191,6 +214,38 @@
       </div>
 
       </template>
+
+      <!--
+        When it happened, which is not when it was typed. Defaults to today
+        because that is the common case, and takes any earlier date for
+        everything else. Capped at today: a trade cannot have happened
+        tomorrow, and the picker should say so rather than the server.
+      -->
+      <div>
+        <label for="tx-date" class="block text-sm font-medium text-gray-300 mb-1">Date</label>
+        <input
+          id="tx-date"
+          v-model="form.date"
+          type="date"
+          required
+          :max="today"
+          class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+      </div>
+
+      <!-- Selling can only ever be about something already held. -->
+      <p v-if="form.side === 'sell' && heldQuantity !== null" class="text-xs" :class="heldQuantity > 0 ? 'text-gray-400' : 'text-amber-400'">
+        <template v-if="heldQuantity > 0">
+          You hold {{ heldQuantity.toLocaleString('en-US', { maximumFractionDigits: 8 }) }}
+          {{ form.symbol }}.
+          <button type="button" class="underline hover:text-white" @click="form.quantity = heldQuantity">
+            Sell all
+          </button>
+        </template>
+        <template v-else>
+          You do not hold any {{ form.symbol }}, so there is nothing to sell.
+        </template>
+      </p>
 
       <!-- What the chosen line costs now, and what the entered price becomes. -->
       <p v-if="quoteLoading" class="text-gray-500 text-xs">Checking the current price…</p>
@@ -225,10 +280,11 @@
 
       <button
         type="submit"
-        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        class="w-full text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        :class="form.side === 'sell' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'"
         :disabled="!isValid"
       >
-        Add Asset
+        {{ form.side === 'sell' ? 'Record sale' : 'Record purchase' }}
       </button>
     </form>
   </div>
@@ -262,16 +318,51 @@ function unitCostInUsd(code: string): number {
 const supportedSymbols = computed(() => supportedCrypto.value)
 onMounted(loadSupportedCrypto)
 
+const SIDES = [
+  { id: 'buy' as const, label: 'Buy' },
+  { id: 'sell' as const, label: 'Sell' },
+]
+
+/** Today where the user is, in the format a date input expects. */
+const today = new Date().toLocaleDateString('en-CA')
+
 const form = reactive({
+  side: 'buy' as 'buy' | 'sell',
   type: 'crypto' as 'crypto' | 'stock' | 'commodity' | 'cash',
   symbol: '',
   name: '',
   quantity: null as number | null,
   purchasePrice: null as number | null,
+  date: today,
+})
+
+/**
+ * How much of this is held, for a sale.
+ *
+ * Read from the portfolio already in memory rather than asked of the server:
+ * the holdings are right there, and a round trip per keystroke to answer a
+ * question the client can answer would be worse than useless.
+ */
+const heldQuantity = computed<number | null>(() => {
+  if (form.side !== 'sell') return null
+  const sym = form.symbol.trim().toUpperCase()
+  if (!sym) return null
+  const held = store.assets.find(
+    a => a.symbol.toUpperCase() === sym && a.type === form.type,
+  )
+  return held?.quantity ?? 0
 })
 
 const isValid = computed(() => {
   if (form.symbol.trim().length === 0 || (form.quantity ?? 0) <= 0) return false
+  if (form.side === 'sell') {
+    // Selling names something already held, so its name is already known — and
+    // it cannot exceed the position, which is worth saying before the request
+    // rather than after it comes back refused.
+    const held = heldQuantity.value ?? 0
+    if (held <= 0 || (form.quantity ?? 0) > held) return false
+    return form.type === 'cash' || (form.purchasePrice ?? 0) > 0
+  }
   // Cash needs no name and no unit price: the currency names it, and what one
   // unit is worth is an exchange rate rather than something anyone types.
   if (form.type === 'cash') return true
@@ -290,10 +381,11 @@ async function handleSubmit() {
   const isCash = form.type === 'cash'
   const code = form.symbol.trim().toUpperCase()
 
-  await store.addAsset({
+  await store.addTransaction({
     symbol: code,
     name: isCash ? currencyName(code) : form.name.trim(),
     type: form.type,
+    side: form.side,
     quantity: form.quantity!,
     // A unit of currency is booked at what it is worth now, so a balance
     // starts level and only shows a gain once the rate has actually moved.
@@ -301,14 +393,16 @@ async function handleSubmit() {
     // Entered in the currency the exchange quotes, stored in dollars: every
     // total in the app is a dollar total, and mixing units inside one column
     // is how a portfolio quietly stops adding up.
-    purchasePrice: isCash ? unitCostInUsd(code) : form.purchasePrice! * usdPerUnit.value,
+    unitPrice: isCash ? unitCostInUsd(code) : form.purchasePrice! * usdPerUnit.value,
+    date: form.date,
     ...(isCash ? { currency: code } : {}),
   })
 
   // Attempt to fetch current price immediately
   await refreshAllPrices()
 
-  // Reset form
+  // Reset the trade, not the desk: the side and the date are usually the same
+  // for the next entry, and re-picking them every time is friction for nothing.
   form.symbol = ''
   form.name = ''
   form.quantity = null

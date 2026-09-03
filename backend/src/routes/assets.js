@@ -1,89 +1,9 @@
 import { Router } from 'express'
 import Asset from '../models/Asset.js'
 import auth from '../middleware/auth.js'
-import { loadSnapshot, STANDARD } from '../jobs/snapshotStore.js'
-import { fetchStockPrices } from '../jobs/stocks.js'
-import { resolveCoin, fetchCoinQuote } from '../jobs/coinlist.js'
+import { applyBuy } from '../positions.js'
 
 const router = Router()
-
-/** Escape a symbol before it goes into a RegExp — "BRK.B" has a dot in it. */
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-
-/**
- * What this holding is worth per unit, right now.
- *
- * A new holding used to open at its purchase price, which reads as a real
- * quote: the row shows a value, a 24h move of exactly +0.00%, and nothing to
- * say the number is a placeholder. It stays that way until the scheduled job
- * next runs — up to fifteen minutes inside market hours, and all night outside
- * them — so a share bought at $50 that trades at $550 sits in the book an order
- * of magnitude wrong, looking entirely settled.
- *
- * The stored snapshot answers for anything already tracked, which costs
- * nothing. Only a symbol nobody holds yet needs a request, and that draws on
- * the lookup allowance rather than the price job's.
- *
- * Returns null when there is genuinely no price to be had. The caller then
- * falls back to the purchase price but leaves `lastUpdated` unset, so an
- * unpriced holding stays distinguishable from one that simply has not moved.
- */
-async function livePrice({ symbol, type, currency }) {
-  const snap = await loadSnapshot(STANDARD).catch(() => null)
-
-  if (type === 'cash') {
-    const code = String(currency ?? symbol).toUpperCase()
-    if (code === 'USD') return { price: 1, change24h: 0 }
-    const rate = snap?.fxRates?.[code]
-    return rate > 0 ? { price: 1 / rate, change24h: 0 } : null
-  }
-
-  const bucket = type === 'crypto' ? snap?.crypto
-    : type === 'commodity' ? snap?.commodities
-      : snap?.stocks
-  const known = bucket?.[symbol]
-  if (known?.price) {
-    return { price: known.price, change24h: known.change24h ?? 0, asOf: known.asOf ?? null }
-  }
-
-  /**
-   * A coin outside the ranked window is looked up rather than refused.
-   *
-   * The window is fifty deep and a dozen of those slots are stablecoins, so
-   * real assets sit outside it — Polkadot at rank 56, POL at 70. Holding
-   * either used to mean a row that showed its purchase price forever, because
-   * the scheduled job only prices what it already knows about. Resolving here
-   * stores the coin, so this add gets a price and every run after this one
-   * keeps it current.
-   */
-  if (type === 'crypto') {
-    const coin = await resolveCoin(symbol)
-    if (!coin?.coingeckoId) return null
-    const quote = await fetchCoinQuote(coin.coingeckoId)
-    return quote
-      ? { price: quote.price, change24h: quote.change24h, asOf: quote.asOf }
-      : null
-  }
-
-  // A metal not in the snapshot is one the price job does not track, and
-  // guessing is worse than waiting for it.
-  if (type !== 'stock') return null
-
-  try {
-    const [quote] = Object.values(await fetchStockPrices([symbol], {
-      fxRates: snap?.fxRates ?? null,
-      budget: 'yahooSearch',
-    }))
-    return quote?.price
-      ? { price: quote.price, change24h: quote.change24h ?? 0, asOf: quote.asOf ?? null }
-      : null
-  } catch {
-    return null
-  }
-}
 
 // All asset routes require authentication
 router.use(auth)
@@ -130,41 +50,23 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Purchase price must be a number' })
     }
 
-    const existing = await Asset.findOne({
-      userId: req.userId,
-      type,
-      symbol: new RegExp(`^${escapeRegex(symbol)}$`, 'i'),
-    })
-
-    if (existing) {
-      const totalQty = existing.quantity + qty
-      // Weighted by quantity: a hundred shares at $10 and one at $500 average
-      // to $14.85, not to $255.
-      existing.purchasePrice = totalQty > 0
-        ? (existing.quantity * existing.purchasePrice + qty * price) / totalQty
-        : price
-      existing.quantity = totalQty
-      existing.symbol = symbol
-      await existing.save()
-      return res.json(existing)
-    }
-
-    const live = await livePrice({ symbol, type, currency })
-
-    const asset = await Asset.create({
+    /**
+     * Adding a holding and recording a buy are the same event, so they go
+     * through the same code — see positions.js. This route predates the ledger
+     * and is kept for callers that only want to state a position; the form
+     * posts to /api/transactions, which also writes the trade down.
+     */
+    const { asset, created } = await applyBuy({
       userId: req.userId,
       symbol,
       name,
       type,
       quantity: qty,
-      purchasePrice: price,
-      // The purchase price only stands in when nothing could be quoted, and
-      // then `lastUpdated` stays null so the row is not mistaken for priced.
-      currentPrice: live?.price ?? price,
-      change24h: live?.change24h ?? 0,
-      lastUpdated: live ? new Date() : null,
-      currency: type === 'cash' ? String(currency ?? symbol).toUpperCase() : null,
+      unitPrice: price,
+      currency,
     })
+
+    if (!created) return res.json(asset)
     res.status(201).json(asset)
   } catch (err) {
     next(err)
