@@ -10,11 +10,25 @@
       </div>
 
       <div class="my-auto py-9 w-full max-w-[396px] mx-auto lg:mx-0">
+        <!--
+          Both headings name the action, because this page is most people's
+          first sight of the product and the heading is the first thing read.
+          It said "Welcome back" on the log-in tab, which is where everyone
+          lands — greeting a first-time visitor as a returning one, and
+          claiming a history they do not have.
+        -->
         <h1 class="text-[32px] leading-tight tracking-[-0.03em] font-medium mb-2">
-          {{ mode === 'login' ? 'Welcome back' : 'Create your account' }}
+          {{ mode === 'login' ? 'Log in to your portfolio' : 'Create your account' }}
         </h1>
+        <!--
+          Only what the app actually does. The analysis is a model's read of
+          news we fetched ourselves, with every citation checked back against
+          that list (backend/src/jobs/insights.js), and the comparison is the
+          /compare page — so neither word is a promise the product cannot keep.
+        -->
         <p class="text-sm text-n-400 mb-[26px]">
-          Every holding you own, one number, updated every five minutes.
+          Every holding you own, one number, updated every five minutes — with
+          AI-powered analysis and side-by-side comparison.
         </p>
 
         <!-- Log in / Sign up as a switch rather than two pages -->
