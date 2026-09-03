@@ -207,10 +207,20 @@
         </p>
       </template>
 
-      <!-- Crypto hint -->
-      <p v-if="form.type === 'crypto' && !isSupportedCrypto" class="text-yellow-400 text-xs">
-        ⚠️ Symbol not in the auto-fetch list. Price will not be auto-updated. Supported symbols:
-        {{ supportedSymbols.join(', ') }}
+      <!--
+        Not a warning any more, because it is no longer true.
+
+        This used to say the price would never update and then list all fifty
+        tracked symbols, which read as a refusal — and the list is only a
+        market-cap window, so Polkadot at rank 56 and POL at 70 were both
+        outside it despite being perfectly ordinary holdings. A coin the app has
+        not seen is now looked up when the holding is saved, and priced on every
+        run after that, so the only thing left worth saying is that this one is
+        new to us.
+      -->
+      <p v-if="form.type === 'crypto' && !isSupportedCrypto" class="text-n-400 text-xs">
+        Not one of the coins already tracked — it will be looked up when you add
+        it, then priced alongside the rest.
       </p>
 
       <button

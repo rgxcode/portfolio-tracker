@@ -3,6 +3,7 @@ import Asset from '../models/Asset.js'
 import auth from '../middleware/auth.js'
 import { loadSnapshot, STANDARD } from '../jobs/snapshotStore.js'
 import { fetchStockPrices } from '../jobs/stocks.js'
+import { resolveCoin, fetchCoinQuote } from '../jobs/coinlist.js'
 
 const router = Router()
 
@@ -48,9 +49,27 @@ async function livePrice({ symbol, type, currency }) {
     return { price: known.price, change24h: known.change24h ?? 0, asOf: known.asOf ?? null }
   }
 
-  // Only equities and funds can be quoted on demand; a coin or a metal not in
-  // the snapshot is one the price job does not track, and guessing is worse
-  // than waiting for it.
+  /**
+   * A coin outside the ranked window is looked up rather than refused.
+   *
+   * The window is fifty deep and a dozen of those slots are stablecoins, so
+   * real assets sit outside it — Polkadot at rank 56, POL at 70. Holding
+   * either used to mean a row that showed its purchase price forever, because
+   * the scheduled job only prices what it already knows about. Resolving here
+   * stores the coin, so this add gets a price and every run after this one
+   * keeps it current.
+   */
+  if (type === 'crypto') {
+    const coin = await resolveCoin(symbol)
+    if (!coin?.coingeckoId) return null
+    const quote = await fetchCoinQuote(coin.coingeckoId)
+    return quote
+      ? { price: quote.price, change24h: quote.change24h, asOf: quote.asOf }
+      : null
+  }
+
+  // A metal not in the snapshot is one the price job does not track, and
+  // guessing is worse than waiting for it.
   if (type !== 'stock') return null
 
   try {

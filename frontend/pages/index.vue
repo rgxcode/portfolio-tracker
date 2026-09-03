@@ -96,15 +96,33 @@ function stopPolling() {
 }
 
 function startPolling() {
-  stopPolling()
+  // Restarting a running timer would put the next tick a full POLL_MS away
+  // again. Tab focus changes call this, and someone switching tabs more often
+  // than every thirty seconds reset the countdown every time — so the interval
+  // never elapsed and the figures never moved.
+  if (pollTimer) return
   pollTimer = setInterval(pollTick, POLL_MS)
 }
 
-/** Poll while the tab is visible; a hidden tab has nobody to inform. */
+/**
+ * Poll while the tab is visible; a hidden tab has nobody to inform.
+ *
+ * Coming back has to fetch, not merely schedule a fetch. Browsers throttle a
+ * hidden tab's timers to about once a minute and freeze them altogether once
+ * the tab is fully backgrounded, so a dashboard left in another window is
+ * showing whatever the numbers were when it lost focus — minutes or hours
+ * stale. Scheduling alone left that number on screen for another thirty
+ * seconds after the tab was looked at again, which reads as a dashboard that
+ * does not update and invites a manual reload.
+ */
 function syncPolling() {
   const visible = !import.meta.client || document.visibilityState === 'visible'
-  if (visible) startPolling()
-  else stopPolling()
+  if (!visible) {
+    stopPolling()
+    return
+  }
+  if (!pollTimer) pollTick()
+  startPolling()
 }
 
 onUnmounted(() => {
@@ -425,7 +443,10 @@ provide('dash', reactive({
 onMounted(async () => {
   loadPreference()
   document.addEventListener('visibilitychange', syncPolling)
-  syncPolling()
+  // Only start the clock here. This path fetches prices itself a few lines
+  // down, so syncPolling's catch-up poll would be a duplicate request on every
+  // page load; it exists for coming *back* to the tab, not for arriving.
+  if (!import.meta.client || document.visibilityState === 'visible') startPolling()
   fetchEurRate()
   await store.fetchAssets()
   if (store.assets.length > 0) {
