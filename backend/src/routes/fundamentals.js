@@ -149,6 +149,24 @@ async function currentQuote(symbol) {
  * European venues at genuinely different prices, and VVSM.F is a different
  * line from VVSM.DE, not the same one seen from elsewhere.
  */
+/**
+ * Products that track something else, rather than being the thing.
+ *
+ * Searching a well-known company by its common name can return nothing but
+ * these: "SpaceX" matches "Direxion Daily SpaceX Bear 2X ETF" and five more
+ * like it, because every one of them spells the company out in its own name,
+ * while the company itself is filed under the legal name it registered with —
+ * SPACE EXPLORATION TECHNOLOGIES CORP, which contains no "SpaceX" at all.
+ *
+ * So the underlying loses to its own derivatives. These are still offered —
+ * someone may well want one — but they sort below anything that is not a
+ * geared bet, and they no longer count towards "we have enough results", which
+ * is what stopped the wider search from ever running.
+ */
+const GEARED = /(\b\d+(\.\d+)?X\b|\bULTRA(SHORT|PRO)?\b|\bBULL\b|\bBEAR\b|\bINVERSE\b|\bLEVERAGE[D]? SHARES\b|\bDAILY TARGET\b|\bCOVERED CALL\b|\b(ENHANCED|TARGET|OPTION) INCOME\b|\bYIELDMAX\b)/i
+
+const isGeared = r => GEARED.test(String(r?.name ?? ''))
+
 async function searchYahoo(q) {
   const url = `https://query2.finance.yahoo.com/v1/finance/search`
     + `?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`
@@ -304,14 +322,24 @@ router.get('/search', async (req, res, next) => {
       if (results.length >= 8) break
     }
 
-    // Nothing here knows about listings outside the US: the SEC and Nasdaq
-    // files cover US exchanges only, so a European line like the VanEck
-    // Semiconductor UCITS ETF simply is not in the universe. Yahoo's own
-    // search does know, so it fills in when we come up short — one request,
-    // only when the local answer is thin, and only after the local answer has
-    // had its say, so a familiar US ticker is never pushed down the list by a
-    // foreign line that merely matches.
-    if (results.length < 5 && q.length >= 2 && await consume('yahooSearch')) {
+    /**
+     * Nothing here knows about listings outside the US: the SEC and Nasdaq
+     * files cover US exchanges only, so a European line like the VanEck
+     * Semiconductor UCITS ETF simply is not in the universe. Yahoo's own
+     * search does know, so it fills in when we come up short — one request,
+     * only when the local answer is thin, and only after the local answer has
+     * had its say, so a familiar US ticker is never pushed down the list by a
+     * foreign line that merely matches.
+     *
+     * Equity tabs only. This returns nothing but shares and funds — it filters
+     * to EQUITY, ETF and MUTUALFUND and stamps every row `type: 'stock'` — so
+     * under Crypto or Metals it can only ever contribute the wrong kind of
+     * thing. It did: the local half of the search correctly returns no equities
+     * there, which left the results short, which is precisely the condition
+     * that invited this in. Someone adding a coin got a dropdown of companies.
+     */
+    const plainCount = results.filter(r => !isGeared(r)).length
+    if (wantStocks && plainCount < 5 && q.length >= 2 && await consume('yahooSearch')) {
       try {
         const foreign = await searchYahoo(q)
         for (const f of foreign) {
@@ -326,7 +354,13 @@ router.get('/search', async (req, res, next) => {
       }
     }
 
-    res.json({ results })
+    /**
+     * Stable partition, so a company always precedes the leveraged products
+     * written on it while the ordering within each half stays as ranked.
+     */
+    const ranked = [...results.filter(r => !isGeared(r)), ...results.filter(isGeared)]
+
+    res.json({ results: ranked.slice(0, 8) })
   } catch (err) {
     next(err)
   }
