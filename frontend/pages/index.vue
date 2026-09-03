@@ -53,6 +53,7 @@ import { usePortfolioStore, type Asset } from '~/stores/portfolio'
 import { useMarketData } from '~/composables/useMarketData'
 import { useHistoricalPrices, type TimePeriod } from '~/composables/useHistoricalPrices'
 import { useCurrency } from '~/composables/useCurrency'
+import { assetClass, assetClassLabel, type AssetClass } from '~/utils/assetClass'
 
 definePageMeta({ middleware: 'auth' })
 
@@ -114,21 +115,27 @@ onUnmounted(() => {
 const { fetchAssetHistory, fetchAllStockHistories, clearCache } = useHistoricalPrices()
 const { selectedCurrency, currencySymbol, convert, toggleCurrency, loadPreference, fetchEurRate } = useCurrency()
 
-// ── Asset type filter ───────────────────────────────────────────────
+// ── Asset class filter ──────────────────────────────────────────────
+/**
+ * Funds get their own tab rather than sharing the equities' one. A holding is
+ * filtered by what it is, not by which snapshot bucket priced it — see
+ * utils/assetClass for why those differ.
+ */
 const assetTabs = [
   { label: 'All', value: 'all' },
   { label: 'Crypto', value: 'crypto' },
   { label: 'Stocks', value: 'stock' },
+  { label: 'ETFs', value: 'etf' },
   { label: 'Metals', value: 'commodity' },
   { label: 'Cash', value: 'cash' },
 ] as const
 
-type TabValue = 'all' | 'crypto' | 'stock' | 'commodity' | 'cash'
+type TabValue = 'all' | AssetClass
 const activeTab = ref<TabValue>('all')
 
 const filteredAssets = computed(() => {
   if (activeTab.value === 'all') return store.assets
-  return store.assets.filter(a => a.type === activeTab.value)
+  return store.assets.filter(a => assetClass(a) === activeTab.value)
 })
 
 const filteredTotalValue = computed(() =>
@@ -308,29 +315,21 @@ function assetGainPct(a: Asset): number {
 
 // ── Allocation data ─────────────────────────────────────────────────
 /**
- * Display names per asset type. A lookup rather than a ternary: the previous
- * two-way test read "crypto, else stocks", so adding metals filed them silently
- * under Stocks — a gold holding inflated the equity slice instead of appearing
- * as its own. An unknown type now shows as itself rather than as something else.
+ * The band a holding is shown in. Named for the sections rather than for the
+ * pricing bucket, because a semiconductor ETF is priced like a share and is
+ * not one — see utils/assetClass.
  */
-const TYPE_LABELS: Record<string, string> = {
-  crypto: 'Crypto',
-  stock: 'Stocks',
-  commodity: 'Commodities',
-  cash: 'Cash',
-}
-const typeLabel = (t: string) =>
-  TYPE_LABELS[t] ?? (t ? t[0].toUpperCase() + t.slice(1) : 'Other')
+const groupLabel = (a: Asset) => assetClassLabel(a)
 
 const typeAllocation = computed(() => {
   const typeMap: Record<string, number> = {}
   for (const a of filteredAssets.value) {
-    const label = typeLabel(a.type)
+    const label = groupLabel(a)
     typeMap[label] = (typeMap[label] || 0) + a.currentPrice * a.quantity
   }
   // Fixed order, so a slice keeps its colour as holdings come and go rather
   // than being repainted by whichever type happens to sort first.
-  const order = ['Crypto', 'Stocks', 'Commodities', 'Cash']
+  const order = ['Crypto', 'Stocks', 'ETFs', 'Commodities', 'Cash']
   const labels = Object.keys(typeMap).sort(
     (a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99),
   )
@@ -418,7 +417,7 @@ provide('dash', reactive({
   chartLabels, chartValues, chartLoading, periods, selectedPeriod, selectPeriod,
   unitPrice, openTicker, refresh,
   assetTabs, activeTab, setTab, filteredTotalCost, todayChange, topHolding,
-  typeAllocation, typeLabel,
+  typeAllocation, groupLabel,
 }))
 
 

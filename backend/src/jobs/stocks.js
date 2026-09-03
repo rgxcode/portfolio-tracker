@@ -85,6 +85,19 @@ async function fetchFromYahoo(symbol, budget = 'yahoo') {
       : new Date().toISOString(),
     currency: meta.currency ?? 'USD',
     exchange: meta.fullExchangeName ?? null,
+    /**
+     * EQUITY, ETF, MUTUALFUND — what kind of instrument this ticker is.
+     *
+     * A fund is not a company, and a book that files one under Stocks reads as
+     * though it holds a semiconductor firm when it holds a basket of thirty.
+     * Yahoo has always said which this is on the call we already make; we were
+     * throwing the answer away.
+     *
+     * Not the whole story: Yahoo reports exchange-traded commodities as EQUITY
+     * (Xetra-Gold and WisdomTree Physical Gold both come back that way), so a
+     * caller cannot treat "EQUITY" as proof of a company.
+     */
+    instrumentType: meta.instrumentType ?? null,
     source: 'yahoo',
   }
 }

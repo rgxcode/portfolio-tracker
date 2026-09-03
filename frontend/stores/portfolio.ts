@@ -22,6 +22,12 @@ export interface Asset {
   priceAsOfCET?: string | null
   /** Which provider the price came from. */
   priceSource?: string | null
+  /**
+   * Yahoo's word for the instrument — EQUITY, ETF, MUTUALFUND — carried on the
+   * quote rather than stored on the holding, so it corrects itself as quotes
+   * arrive instead of needing a migration. See utils/assetClass.
+   */
+  instrumentType?: string | null
 }
 
 export interface PortfolioState {
@@ -184,7 +190,13 @@ export const usePortfolioStore = defineStore('portfolio', {
       id: string,
       currentPrice: number,
       change24h: number,
-      meta?: { asOf?: string, asOfCET?: string, source?: string, image?: string | null },
+      meta?: {
+        asOf?: string
+        asOfCET?: string
+        source?: string
+        image?: string | null
+        instrumentType?: string | null
+      },
       persist = true,
     ) {
       // Update local state immediately so the UI reflects fresh prices
@@ -202,6 +214,10 @@ export const usePortfolioStore = defineStore('portfolio', {
           // Keep any logo already known rather than blanking it on a poll that
           // happens to carry none.
           image: meta?.image ?? this.assets[idx].image ?? null,
+          // Same reasoning: a quote from the fallback provider carries no
+          // instrument type, and forgetting one we already had would drop a
+          // fund back among the companies until the next good quote.
+          instrumentType: meta?.instrumentType ?? this.assets[idx].instrumentType ?? null,
         }
       }
       if (!persist) return

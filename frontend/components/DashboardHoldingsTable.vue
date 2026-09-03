@@ -154,13 +154,17 @@ const rows = computed(() => {
  * Bands are ordered by weight, largest first, so the table still opens on the
  * biggest thing in the portfolio; within a band the rows keep the order they
  * were sorted into.
+ *
+ * Banded by asset class rather than by `type`: a fund is priced like a share
+ * but is not one, and a semiconductor ETF listed among the semiconductor
+ * companies misreads the book. See utils/assetClass.
  */
 const groups = computed(() => {
   const total = d.filteredTotalValue || 1
   const byLabel = new Map<string, { label: string, rows: any[], total: number }>()
 
   for (const row of rows.value) {
-    const label = d.typeLabel(row.asset.type)
+    const label = d.groupLabel(row.asset)
     let group = byLabel.get(label)
     if (!group) {
       group = { label, rows: [], total: 0 }

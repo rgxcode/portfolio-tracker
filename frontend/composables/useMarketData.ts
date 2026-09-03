@@ -46,6 +46,11 @@ export function useMarketData() {
     source: string
     /** Set for crypto only; equity logos are derived from the ticker. */
     image?: string | null
+    /**
+     * Set for stock quotes only, and only when Yahoo answered: EQUITY, ETF or
+     * MUTUALFUND. The Alpha Vantage fallback reports none.
+     */
+    instrumentType?: string | null
   }
 
   interface PriceSnapshot {
@@ -162,6 +167,9 @@ export function useMarketData() {
         // Crypto logos travel with the quote; equity logos derive from the
         // ticker, so there is nothing to carry for those.
         image: quote.image ?? null,
+        // What Yahoo calls this ticker, which is how a fund is told apart from
+        // a company. Only stock quotes carry one.
+        instrumentType: quote.instrumentType ?? null,
       }, persist)
     }
   }

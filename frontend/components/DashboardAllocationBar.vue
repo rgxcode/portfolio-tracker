@@ -50,8 +50,20 @@ const d = inject<any>('dash')
 
 if (!d && import.meta.client) console.error('DashboardAllocationBar: dashboard state was not provided')
 
-/** Accent ramp, darkening by rank, so the biggest slice is the brightest. */
-const TIERS = ['var(--n-accent)', 'var(--n-accent-600)', 'var(--n-accent-800)', 'var(--n-accent-900)']
+/**
+ * Accent ramp, darkening by rank, so the biggest slice is the brightest.
+ *
+ * One tier per class the book can hold. Funds became their own class, which
+ * made five — and with four tiers the two smallest slices were handed the same
+ * colour and stopped being separable in the bar.
+ */
+const TIERS = [
+  'var(--n-accent)',
+  'var(--n-accent-600)',
+  'var(--n-accent-700)',
+  'var(--n-accent-800)',
+  'var(--n-accent-900)',
+]
 
 const slices = computed(() => {
   const { labels, values } = d.typeAllocation
