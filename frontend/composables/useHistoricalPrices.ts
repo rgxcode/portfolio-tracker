@@ -22,19 +22,27 @@ const cache = new Map<string, PricePoint[]>()
 export function useHistoricalPrices() {
   const config = useRuntimeConfig()
 
+  /**
+   * The type is sent, not ignored.
+   *
+   * A symbol alone does not identify a series: INR is the Indian rupee to a
+   * cash holding and Infinity Natural Resources to the NYSE, and the backend
+   * needs to know which was meant before it goes looking. It is part of the
+   * cache key for the same reason.
+   */
   async function fetchAssetHistory(
     symbol: string,
-    _type: string,
+    type: string,
     period: TimePeriod,
   ): Promise<PricePoint[]> {
-    const key = `${symbol.toUpperCase()}:${period}`
+    const key = `${type}:${symbol.toUpperCase()}:${period}`
     const cached = cache.get(key)
     if (cached) return cached
 
     try {
       const data = await $fetch<{ points: PricePoint[] }>(
         `${config.public.apiBaseUrl}/api/prices/${encodeURIComponent(symbol)}/history`,
-        { params: { period } },
+        { params: { period, type } },
       )
       const points = data.points ?? []
       if (points.length > 0) cache.set(key, points)

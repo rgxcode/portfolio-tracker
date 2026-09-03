@@ -196,43 +196,82 @@ async function loadChart() {
       })),
     )
 
-    // Find the asset with the most data points to use as the time axis
-    const maxHistory = histories.reduce((a, b) => a.points.length >= b.points.length ? a : b)
-    if (maxHistory.points.length === 0) {
+    /**
+     * The time axis is every instant any holding was priced at, not one
+     * holding's instants.
+     *
+     * It used to borrow the timestamps of whichever asset happened to have the
+     * most points — usually a coin, sampled every five minutes. Every other
+     * holding was then read at those instants, so a stock's own moves landed on
+     * the coin's clock and anything that moved between two crypto samples was
+     * invisible. The union is the honest axis: a point appears exactly where a
+     * price was actually observed.
+     */
+    const timestamps = [...new Set(histories.flatMap(h => h.points.map(p => p.timestamp)))]
+      .sort((a, b) => a - b)
+
+    if (timestamps.length === 0) {
       chartLabels.value = []
       chartValues.value = []
       return
     }
 
-    const timestamps = maxHistory.points.map(p => p.timestamp)
-
-    // For each timestamp, compute total portfolio value
+    /**
+     * Value the book at each instant, carrying each holding's last known price
+     * forward.
+     *
+     * One cursor per holding rather than a rescan per timestamp: the axis is a
+     * union now, so the old nested scan would have been the product of every
+     * series' length against every other's. The cursors only ever move forward,
+     * which makes this one pass over each series however long the axis is.
+     */
+    const cursors = histories.map(() => 0)
     const values = timestamps.map((ts) => {
       let total = 0
-      for (const { asset, points } of histories) {
+      histories.forEach(({ asset, points }, i) => {
+        // Never priced at all — a holding added minutes ago, or one whose
+        // provider has nothing. Its current price is the only figure we have,
+        // and it is better than dropping it from a total shown as complete.
         if (points.length === 0) {
           total += asset.currentPrice * asset.quantity
-          continue
+          return
         }
-        let price = points[0].price
-        for (const pt of points) {
-          if (pt.timestamp <= ts) price = pt.price
-          else break
-        }
-        total += price * asset.quantity
-      }
+        let c = cursors[i]
+        while (c + 1 < points.length && points[c + 1].timestamp <= ts) c++
+        cursors[i] = c
+        // Before its first observation a holding has no price yet, so its
+        // earliest one stands in — the alternative is a line that starts at a
+        // total the portfolio never had.
+        total += points[c].price * asset.quantity
+      })
       return parseFloat(total.toFixed(2))
     })
 
     const formatter = labelFormatter(selectedPeriod.value)
-    chartLabels.value = timestamps.map(formatter)
-    chartValues.value = values
+    const drawn = thin(timestamps.map((ts, i) => ({ ts, value: values[i] })))
+    chartLabels.value = drawn.map(p => formatter(p.ts))
+    chartValues.value = drawn.map(p => p.value)
   } catch {
     chartLabels.value = []
     chartValues.value = []
   } finally {
     chartLoading.value = false
   }
+}
+
+/**
+ * Evenly thin the drawn series. Merging fourteen histories can produce several
+ * thousand instants, and a chart 700 pixels wide has nothing to do with them.
+ * The last point is always kept so the line ends where the portfolio is now.
+ */
+function thin<T>(points: T[], max = 400): T[] {
+  if (points.length <= max) return points
+  const step = points.length / max
+  const out: T[] = []
+  for (let i = 0; i < max; i++) out.push(points[Math.floor(i * step)])
+  const last = points[points.length - 1]
+  if (out[out.length - 1] !== last) out.push(last)
+  return out
 }
 
 function labelFormatter(period: TimePeriod): (ts: number) => string {
@@ -379,7 +418,7 @@ provide('dash', reactive({
   chartLabels, chartValues, chartLoading, periods, selectedPeriod, selectPeriod,
   unitPrice, openTicker, refresh,
   assetTabs, activeTab, setTab, filteredTotalCost, todayChange, topHolding,
-  typeAllocation,
+  typeAllocation, typeLabel,
 }))
 
 

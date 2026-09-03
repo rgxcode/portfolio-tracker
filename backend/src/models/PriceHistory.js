@@ -9,8 +9,15 @@ import mongoose from 'mongoose'
  */
 const priceHistorySchema = new mongoose.Schema(
   {
+    /**
+     * What the series is keyed by. A ticker for anything that trades, and
+     * `FX:<code>` for a currency — because a currency code is not a ticker and
+     * the two collide: INR is the rupee to someone holding cash and Infinity
+     * Natural Resources to the NYSE. Sharing one namespace priced a 420,000
+     * rupee balance as 420,000 shares of an oil company.
+     */
     symbol: { type: String, required: true, uppercase: true },
-    type: { type: String, enum: ['crypto', 'stock', 'commodity'], required: true },
+    type: { type: String, enum: ['crypto', 'stock', 'commodity', 'cash'], required: true },
     // The instant the price belongs to — the exchange/source timestamp, not
     // the moment we fetched it.
     ts: { type: Date, required: true },

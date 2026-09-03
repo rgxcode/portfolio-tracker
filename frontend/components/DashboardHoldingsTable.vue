@@ -35,9 +35,24 @@
             <th class="text-right n-th w-24">30 days</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody v-for="group in groups" :key="group.label">
+          <!--
+            One band per asset class. Suppressed when there is only one, where
+            it would repeat the card's own heading and rule off nothing.
+          -->
+          <tr v-if="groups.length > 1">
+            <td colspan="8" class="pt-3.5 pb-1.5 px-[10px]">
+              <div class="flex items-baseline gap-2">
+                <span class="n-kicker">{{ group.label }}</span>
+                <span class="text-[11px] text-n-600">{{ group.rows.length }}</span>
+                <span class="ml-auto text-[11.5px] text-n-300">{{ group.value }}</span>
+                <span class="text-[11px] text-n-600 w-11 text-right">{{ group.weight.toFixed(1) }}%</span>
+              </div>
+            </td>
+          </tr>
+
           <tr
-            v-for="row in rows"
+            v-for="row in group.rows"
             :key="row.asset.id"
             class="rule hover:bg-[rgba(233,233,237,.04)] transition-colors cursor-pointer"
             @click="d.openTicker(row.asset.symbol.toUpperCase())"
@@ -119,9 +134,49 @@ const rows = computed(() => {
       change: asset.lastUpdated && Number.isFinite(asset.change24h) ? asset.change24h : null,
       weight: (value / total) * 100,
       barWidth: (value / largest) * 100,
+      // Kept alongside the formatted string: the class subtotals are added up
+      // from these, and adding up "$24,665.30" is not addition.
+      rawValue: value,
       value: d.formatCurrency(d.convert(value)),
     }
   })
+})
+
+/**
+ * The same rows, banded by asset class.
+ *
+ * A book of fourteen holdings sorted by value alone interleaves a coin, a
+ * miner, an ounce of gold and a cash balance, and reading it means checking
+ * every logo to know what kind of thing each line is. Grouping answers that
+ * once per band, and the subtotal beside each heading is the number the eye
+ * was reaching for anyway.
+ *
+ * Bands are ordered by weight, largest first, so the table still opens on the
+ * biggest thing in the portfolio; within a band the rows keep the order they
+ * were sorted into.
+ */
+const groups = computed(() => {
+  const total = d.filteredTotalValue || 1
+  const byLabel = new Map<string, { label: string, rows: any[], total: number }>()
+
+  for (const row of rows.value) {
+    const label = d.typeLabel(row.asset.type)
+    let group = byLabel.get(label)
+    if (!group) {
+      group = { label, rows: [], total: 0 }
+      byLabel.set(label, group)
+    }
+    group.rows.push(row)
+    group.total += row.rawValue
+  }
+
+  return [...byLabel.values()]
+    .sort((a, b) => b.total - a.total)
+    .map(group => ({
+      ...group,
+      value: d.formatCurrency(d.convert(group.total)),
+      weight: (group.total / total) * 100,
+    }))
 })
 
 /**

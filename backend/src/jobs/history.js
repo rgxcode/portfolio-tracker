@@ -29,7 +29,10 @@ export async function recordSnapshot(quotes, log = console.log) {
             ts: new Date(q.asOf),
             price: q.price,
             source: q.source ?? null,
-            granularity: 'intraday',
+            // Exchange rates arrive once a business day; sampling one every
+            // five minutes would write the same number 288 times and then have
+            // the pruner throw 287 of them away.
+            granularity: q.granularity ?? 'intraday',
           },
         },
         upsert: true,

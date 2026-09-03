@@ -173,11 +173,16 @@ async function fetchCryptoPrices() {
 }
 
 /**
- * Units of each currency per US dollar.
+ * Units of each currency per US dollar, and the day they are the rates for.
  *
  * Returns null rather than a partial map on failure, so a bad response cannot
  * quietly halve someone's cash: the caller keeps the previous snapshot's rates
  * instead, which are stale but coherent.
+ *
+ * The date is the ECB's publication day, not our fetch time. These are daily
+ * reference rates, so that is the instant each one actually belongs to — and
+ * keying history by it means the five-minute job records one point per
+ * currency per day instead of the same figure 288 times.
  */
 async function fetchFxRates() {
   try {
@@ -190,11 +195,44 @@ async function fetchFxRates() {
       const rate = Number(rates[code])
       if (Number.isFinite(rate) && rate > 0) clean[code] = rate
     }
-    return Object.keys(clean).length ? clean : null
+    if (!Object.keys(clean).length) return null
+    return { rates: clean, date: typeof data.date === 'string' ? data.date : null }
   } catch (err) {
     log('FX rate fetch failed (keeping previous):', err.message)
     return null
   }
+}
+
+/**
+ * One history point per currency, in the shape recordSnapshot expects.
+ *
+ * Priced the way a cash holding is: what one unit is worth in US dollars, so a
+ * rupee balance charts against the same axis as everything else in the book.
+ *
+ * Keyed `FX:<code>` rather than the bare code. A currency code is not a ticker
+ * and the two namespaces collide — INR is the rupee here and Infinity Natural
+ * Resources on the NYSE — which once had the chart value a 420,000 rupee
+ * balance as 420,000 shares of an oil company.
+ *
+ * USD is left out on purpose: it is the base, always worth exactly itself, and
+ * a flat line of ones is not history.
+ */
+function fxQuotes(rates, asOf) {
+  if (!rates || !asOf) return {}
+  const quotes = {}
+  for (const [code, rate] of Object.entries(rates)) {
+    if (!(rate > 0)) continue
+    const symbol = `FX:${code}`
+    quotes[symbol] = {
+      symbol,
+      type: 'cash',
+      price: 1 / rate,
+      asOf,
+      source: 'frankfurter',
+      granularity: 'daily',
+    }
+  }
+  return quotes
 }
 
 /** Stocks are due if the window is open and enough time has passed. */
@@ -234,7 +272,11 @@ async function main() {
   // ── Exchange rates ──────────────────────────────────────────────
   // Fetched before stocks, not after: a listing quoted in euros is converted
   // as it arrives, so the rates have to be in hand by then.
-  const fxRates = (await fetchFxRates()) ?? previous?.fxRates ?? null
+  const fx = await fetchFxRates()
+  const fxRates = fx?.rates ?? previous?.fxRates ?? null
+  // Only a freshly fetched day gets recorded; a rate carried over from the
+  // previous snapshot has already been written under the date it belongs to.
+  const fxDate = fx?.date ?? null
   // Kept alongside the full map: the currency toggle has read `eurRate` since
   // long before cash existed, and older clients still do.
   const eurRate = fxRates?.EUR ?? previous?.eurRate ?? 0.86
@@ -302,7 +344,10 @@ async function main() {
   // ── History: append this snapshot so charts have a series to draw ──
   if (dbConnected) {
     try {
-      await recordSnapshot({ ...crypto, ...stocks, ...commodities }, log)
+      await recordSnapshot(
+        { ...crypto, ...stocks, ...commodities, ...fxQuotes(fx?.rates, fxDate) },
+        log,
+      )
       // Housekeeping is cheap and idempotent; once an hour is plenty.
       if (new Date().getMinutes() < 5) await pruneIntraday(log)
     } catch (err) {

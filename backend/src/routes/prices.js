@@ -185,10 +185,26 @@ function downsample(points, max = 500) {
   return out
 }
 
-// GET /api/prices/:symbol/history?period=1M — chart series from our own store
+/**
+ * The key a holding's series is stored under.
+ *
+ * Everything that trades is keyed by its ticker, but a cash balance is held in
+ * a currency, and a currency code is not a ticker. They overlap: INR is the
+ * Indian rupee to someone holding cash and Infinity Natural Resources to the
+ * NYSE, and reading one for the other valued a 420,000 rupee balance at 420,000
+ * times a $15 share price — a portfolio of $73k charted at $6.7m. Currencies
+ * therefore live under their own prefix, where no ticker can reach them.
+ */
+function seriesKey(symbol, type) {
+  return type === 'cash' ? `FX:${symbol}` : symbol
+}
+
+// GET /api/prices/:symbol/history?period=1M&type=stock — chart series from our own store
 router.get('/:symbol/history', async (req, res, next) => {
   try {
-    const symbol = req.params.symbol.toUpperCase()
+    const requested = req.params.symbol.toUpperCase()
+    const type = String(req.query.type ?? '').toLowerCase()
+    const symbol = seriesKey(requested, type)
     const period = req.query.period ?? '1D'
     const cutoff = new Date(periodCutoff(period))
 
@@ -199,9 +215,16 @@ router.get('/:symbol/history', async (req, res, next) => {
 
     let rows = await query()
 
-    // Nothing stored at all: a company we have simply never charted. Fetch it
-    // once, then serve it from our own store like everything else.
-    if (rows.length === 0 && await hasNoHistory(symbol)) {
+    /**
+     * Nothing stored at all: a company we have simply never charted. Fetch it
+     * once, then serve it from our own store like everything else.
+     *
+     * Equities only. The backfill resolves a symbol against `listings`, which
+     * is a table of tickers, so pointing it at a coin, a metal or a currency
+     * can only ever return somebody else's company — and it did. A caller that
+     * names no type is charting a ticker, which is what the asset page does.
+     */
+    if (rows.length === 0 && (type === '' || type === 'stock') && await hasNoHistory(symbol)) {
       if (await ensureHistory(symbol)) rows = await query()
     }
 
@@ -240,7 +263,10 @@ router.get('/:symbol/history', async (req, res, next) => {
     }
 
     res.json({
-      symbol,
+      // What was asked for; `series` is where it is actually stored, which for
+      // cash is not the same string.
+      symbol: requested,
+      series: symbol,
       period,
       supportedPeriods: PERIODS,
       count: points.length,
