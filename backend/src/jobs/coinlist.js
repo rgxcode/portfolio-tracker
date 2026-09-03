@@ -127,6 +127,55 @@ export async function resolveCoin(symbol) {
   return { _id: sym, ...doc }
 }
 
+/**
+ * Find coins by ticker or name, whether or not we already track them.
+ *
+ * The stored list is a market-cap window — fifty deep, a dozen of those slots
+ * spent on stablecoins — and searching only it meant the add form could not
+ * offer anything outside it. Typing DOT returned nothing at all, which reads as
+ * "no such coin" rather than "not in our first fifty". Equities have had this
+ * fallback for exactly the same reason; crypto never got one.
+ *
+ * Ranked by market capitalisation with exact ticker matches first, because a
+ * query like DOT matches Polkadot, a rank-2290 token, and something called
+ * Pippin's Friend, and only one of those is what anybody meant.
+ */
+export async function searchCoins(query, limit = 6) {
+  const q = String(query ?? '').trim()
+  if (q.length < 2) return []
+  if (!(await consume('coingecko'))) return []
+
+  let rows
+  try {
+    const res = await fetch(`${SEARCH}?query=${encodeURIComponent(q)}`, {
+      headers: cgHeaders(),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) return []
+    rows = (await res.json())?.coins
+  } catch {
+    return []
+  }
+  if (!Array.isArray(rows)) return []
+
+  const upper = q.toUpperCase()
+  const exactFirst = c => (String(c.symbol ?? '').toUpperCase() === upper ? 0 : 1)
+  const byRank = c => c.market_cap_rank ?? Infinity
+
+  return rows
+    .filter(c => c?.id && c?.symbol)
+    .sort((a, b) => exactFirst(a) - exactFirst(b) || byRank(a) - byRank(b))
+    .slice(0, limit)
+    .map(c => ({
+      symbol: String(c.symbol).toUpperCase(),
+      name: c.name ?? c.id,
+      sector: 'Crypto',
+      type: 'crypto',
+      image: c.large ?? c.thumb ?? null,
+      rank: c.market_cap_rank ?? null,
+    }))
+}
+
 /** One coin's current price, for the moment a holding is added. */
 export async function fetchCoinQuote(coingeckoId) {
   if (!coingeckoId) return null

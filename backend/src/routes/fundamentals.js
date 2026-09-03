@@ -6,6 +6,7 @@ import { loadFinancials, refreshFinancials } from '../jobs/edgar.js'
 import Constituent from '../models/Constituent.js'
 import PriceHistory from '../models/PriceHistory.js'
 import Coin from '../models/Coin.js'
+import { searchCoins } from '../jobs/coinlist.js'
 import { COMMODITIES } from '../jobs/commodities.js'
 import Listing from '../models/Listing.js'
 import { cikFor } from '../jobs/listings.js'
@@ -338,6 +339,21 @@ router.get('/search', async (req, res, next) => {
      * there, which left the results short, which is precisely the condition
      * that invited this in. Someone adding a coin got a dropdown of companies.
      */
+    /**
+     * Coins we do not already track, for the same reason the equity fallback
+     * exists: the stored list is the first fifty by market capitalisation, and
+     * a coin outside it is not a coin that does not exist. Adding one already
+     * resolved it on save — only finding it was impossible, so the form
+     * offered nothing and the symbol had to be typed blind.
+     */
+    if (wantCrypto && results.filter(r => r.type === 'crypto').length < 5 && q.length >= 2) {
+      for (const coin of await searchCoins(q)) {
+        if (seen.has(coin.symbol)) continue
+        seen.add(coin.symbol)
+        results.push(coin)
+      }
+    }
+
     const plainCount = results.filter(r => !isGeared(r)).length
     if (wantStocks && plainCount < 5 && q.length >= 2 && await consume('yahooSearch')) {
       try {
